@@ -165,9 +165,11 @@ Ad creatives (`POST /v1/orgs/:orgId/campaigns/:id/creatives`) now take `uploadId
 | POST | `/v1/finance/reconciliation/runs` | `finance.reconcile` `{from, to, compareBalance}` |
 | GET | `/v1/finance/reconciliation/exceptions`; POST `/:id/resolve` | `finance.reconcile` / `finance.journal.approve` |
 
+### Attribution and commissions (session 8)
+See `COMMISSIONS.md` for the full table: commission offers, integration API keys, `POST /v1/devices/coupons`, `POST /v1/conversions`, `POST /v1/conversions/refunds`, `GET /v1/orgs/:orgId/conversions`, `POST /v1/finance/commissions/run`. The playlist now includes `clickIdParam` and `coupon` per ad.
+
 ## Planned (Phase 2–6, contracts to be versioned when built)
 - Media: creator playlists/series, object-store adapter, virus scanning.
 - Campaigns: geofences and per-campaign budgets.
-- Attribution: `POST /v1/conversions` (advertiser API key, HMAC-signed, deduped by advertiser order ID), refunds/cancellations.
 - Payouts: `/v1/finance/payout-batches` (dual approval), provider onboarding links.
 - Riders: QR session handoff, coupons, games.

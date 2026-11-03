@@ -41,12 +41,16 @@ export async function playlistRoutes(app: FastifyInstance, { db, config }: { db:
     }
     const live = scheduled.filter((c) => nextPlayBlock(c, spend.get(c.id)!, available.get(`${c.advertiser_org_id}:${c.currency}`)!) === null);
     const creatives = await db.query(`SELECT * FROM creatives WHERE campaign_id = ANY($1::uuid[]) AND status = 'APPROVED' ORDER BY created_at`, [live.map((c) => c.id)]);
+    const offers = await db.query(
+      `SELECT DISTINCT ON (campaign_id) campaign_id, coupon_description FROM commission_offers
+        WHERE campaign_id = ANY($1::uuid[]) AND status = 'ACTIVE' AND coupon_enabled AND valid_from <= now() AND valid_to > now() ORDER BY campaign_id, created_at DESC`, [live.map((c) => c.id)]);
+    const couponBy = new Map(offers.rows.map((o) => [o.campaign_id, o.coupon_description ?? 'Get a coupon']));
     const ads = creatives.rows.map((cr) => {
       const c = live.find((x) => x.id === cr.campaign_id)!;
       const expiresAt = new Date(Math.min(validUntil.getTime(), new Date(c.ends_at).getTime()));
       return {
         campaignId: c.id, creativeId: cr.id, kind: cr.kind, durationMs: cr.duration_ms, headline: cr.headline, bodyText: cr.body_text,
-        destinationUrl: cr.destination_url ?? c.destination_url, priority: c.priority, frequencyCapPerHour: c.frequency_cap_per_hour, skipDelaySeconds: c.skip_delay_seconds,
+        destinationUrl: cr.destination_url ?? c.destination_url, clickIdParam: 'rmn_click', coupon: couponBy.has(c.id) ? { description: couponBy.get(c.id) } : null, priority: c.priority, frequencyCapPerHour: c.frequency_cap_per_hour, skipDelaySeconds: c.skip_delay_seconds,
         schedule: { timezone: c.timezone, daysOfWeek: c.days_of_week, startMinute: c.start_minute, endMinute: c.end_minute },
         expiresAt: expiresAt.toISOString(),
         media: cr.media_key ? { url: signMediaUrl(config.MEDIA_BASE_URL, cr.media_key, expiresAt, config.MEDIA_SIGNING_KEY), expiresAt: expiresAt.toISOString() } : null,

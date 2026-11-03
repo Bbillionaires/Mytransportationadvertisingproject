@@ -159,8 +159,24 @@ R-020 (overspend between allocations) is mitigated. Test totals: finance-core 28
 
 Test totals: finance-core 28, API 104.
 
-### Next steps (in order)
-1. Run the Stripe test-mode checklist with real test keys (R-025).
-2. Phase 4: payouts to creators/drivers (dual-approved batches, payout ≤ payable), statements and dashboards.
-3. Phase 1 remainder: email verification, invitations/password reset, unlock, impersonation endpoints, metrics.
-4. M2.5 Android player: needs a real device and the hardware/EMM decision (D-017).
+## 2026-11-03 — Session 8: sales attribution and commissions (M4.2) ✅
+
+| Item | Status | Evidence |
+|---|---|---|
+| Commission offers (% of sale / fixed per sale, SKU scope, windows, hold), immutable once created | ✅ | `commissions.test.ts` |
+| Integration API keys (scoped, hashed, shown once, revocable) | ✅ | `commissions.test.ts` |
+| Unique single-use coupon/QR codes from signed tablets, rate-limited, tied to driver and creator content | ✅ | `commissions.test.ts` |
+| Conversion API: dedupe by order id, coupon-beats-click, VALID clicks only, windows, foreign touchpoints refused, reasons stored | ✅ | `attribution.test.ts`, `commissions.test.ts` |
+| Commission allocation after the refund hold (15/10/75, 15/0/85) funded by advertiser receivable; idempotent | ✅ | `commissions.test.ts` |
+| Refunds: reduce/cancel before allocation; after allocation → CREDIT reversal request approved by finance | ✅ | `commissions.test.ts` |
+| Playlist advertises coupons and the click-id parameter | ✅ | playlist code |
+| Commission invoicing and collection | ⬜ | Final Stripe phase (D-042) |
+
+Test totals: finance-core 28, API 118.
+
+### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
+1. M4.4 Creator and driver earnings dashboards and statements; M3.6 financial reports (GL, P&L, balance sheet, cash flow, CSV/PDF).
+2. Phase 1 remainder: email verification, invitations/password reset, unlock, support impersonation endpoints, metrics.
+3. Phase 5 rider engagement: rider accounts and QR sign-in, coupons wallet, geofenced alerts, skill games, reward accounting.
+4. M2.5 Android player (needs a real device and D-017).
+5. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).
