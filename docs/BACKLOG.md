@@ -21,10 +21,10 @@ Each milestone is done only when its criteria pass in CI against PostgreSQL. It 
 - **M2.1 Media pipeline:** resumable upload → virus scan → transcode (HLS ladders) → signed CDN URLs. *AC:* unapproved media never served.
 - **M2.2 Moderation:** ASR transcript, frame sampling, image/text checks, risk score → `HOLD` by default; human decision required when uncertain or erroring. *AC:* invariant 13 test (AI failure → HOLD).
 - **M2.3 Rights:** creator attestations, takedown + counter-notice + appeal workflow.
-- **M2.4 Campaigns:** creatives (video, word/text banners, display), schedules with time zones, frequency caps, skip delay, rotation, budgets, regional targeting, approval queue.
-- **M2.5 Tablet playlist API + Android player:** kiosk (dedicated device) enrollment, autoplay, skip, banners, restricted webview with return control, media cache with expiry enforcement, signed offline event queue. *AC:* real-device test plan executed on target hardware.
+- 🟡 **M2.4 Campaigns** (session 4: scheduling with time zones and overnight windows, market targeting, frequency caps, priority, skip delay, restricted categories, review queue; budgets and geofences remain): creatives (video, word/text banners, display), schedules with time zones, frequency caps, skip delay, rotation, budgets, regional targeting, approval queue.
+- 🟡 **M2.5 Tablet playlist API** ✅ (session 4) **+ Android player** ⬜: kiosk (dedicated device) enrollment, autoplay, skip, banners, restricted webview with return control, media cache with expiry enforcement, signed offline event queue. *AC:* real-device test plan executed on target hardware.
 - ✅ **M2.6 Event pipeline** (session 2, see `EVENTS.md`): raw append-only store → validator (signature, dedupe, drift, eligibility, fraud heuristics) → validated aggregates. *AC:* invariant 12 (offline events are not automatically billable); replayed events counted once.
-- **M2.7 Advertiser portal:** self-registration, scoped users, metrics (impressions … ROI), never other advertisers' data.
+- 🟡 **M2.7 Advertiser portal** (session 4: self-registration, campaign/creative API, metrics, balance, basic console views; full portal UI with uploads remains): self-registration, scoped users, metrics (impressions … ROI), never other advertisers' data.
 
 ## Phase 3 — Financial foundation
 - **M3.1 Stripe test-mode Billing** for the $30 driver subscription. *AC:* subscription receipts post only to 4200; cancellation transparent.

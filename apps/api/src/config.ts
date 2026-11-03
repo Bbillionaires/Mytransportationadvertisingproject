@@ -12,6 +12,10 @@ const schema = z.object({
   LOG_LEVEL: z.string().default('info'),
   /** A campaign window may be allocated only after it has been closed this long, so in-flight events arrive. */
   ALLOCATION_SETTLE_MINUTES: z.coerce.number().int().min(0).default(60),
+  /** 32-byte base64 HMAC key for signed, expiring media URLs (shared with the CDN edge verifier). */
+  MEDIA_SIGNING_KEY: z.string().refine((v) => Buffer.from(v, 'base64').length === 32, 'MEDIA_SIGNING_KEY must be 32 bytes base64'),
+  MEDIA_BASE_URL: z.string().url().default('https://media.invalid'),
+  PLAYLIST_TTL_MINUTES: z.coerce.number().int().min(1).max(120).default(15),
   /** Live money movement is hard-disabled until explicitly approved (see DECISIONS.md D-010). */
   LIVE_PAYMENTS_ENABLED: z.enum(['false']).default('false'),
 });

@@ -90,9 +90,28 @@ Test totals: finance-core 28, API 56 (all passing against PostgreSQL 16).
 
 Spec invariant 9 (refunds/chargebacks produce balanced reversals and valid liability updates) is now covered. Test totals: finance-core 28, API 62.
 
+## 2026-11-03 — Session 4: campaign management, review, and tablet playlist (M2.4 / M2.5 API / M2.7) 🟡
+
+| Item | Status | Evidence |
+|---|---|---|
+| Advertiser self-registration (rate-limited) creating an isolated advertiser tenant | ✅ | `campaigns.test.ts` |
+| Campaign API: create/edit drafts, submit, pause, resume, end; status machine in the DB | ✅ | `campaigns.test.ts` |
+| Billing and delivery terms frozen after submission; only shortening allowed (DB trigger) | ✅ | `campaigns.test.ts` |
+| Creatives: video (duration + media), display (media), word/text banners (headline); approved creatives immutable | ✅ | `campaigns.test.ts` |
+| Restricted product categories refused; https-only destinations; IANA time zones | ✅ | `campaigns.test.ts` |
+| Moderator role and review queue; every pending creative must be decided; reviewers can't approve their own org | ✅ | `campaigns.test.ts` |
+| Scheduling (dayparts in campaign time zone, overnight windows), market targeting, frequency caps, priority, skip delay | ✅ | `schedule.test.ts`, `campaigns.test.ts` |
+| Signed tablet playlist: only approved, funded, in-market, in-schedule ads; approved content; signed expiring media URLs | ✅ | `campaigns.test.ts` |
+| Validator enforces schedule, market and frequency cap (out-of-terms plays never billed) | ✅ | `campaigns.test.ts` |
+| Advertiser metrics and ledger-backed balance (tenant-scoped) | ✅ | `campaigns.test.ts` |
+| Console views: advertiser Campaigns, moderator Review queue | 🟡 | Browser-checked at 390 px (Campaigns view, permission refusal); review approve buttons not browser-tested |
+| Media upload/transcode, per-campaign budgets, geofences, invoices | ⬜ | M2.1, M2.4 remainder, Phase 3 |
+
+Test totals: finance-core 28, API 72 (all passing).
+
 ### Next steps (in order)
-1. M2.4/M2.7: campaign and creative management API + advertiser portal (replaces SQL-created campaigns); tablet playlist API with signed media URLs.
-2. M2.1–M2.3: media upload/transcode, fail-closed moderation, rights and takedown.
+1. M2.1–M2.3: media upload (resumable, object storage), transcode, fail-closed content moderation for creator videos, rights attestations and takedown/appeal.
+2. Per-campaign budgets with live spend estimate (R-020), then hourly scheduled allocation windows.
 3. Phase 1 remainder: invitations/password reset, unlock, impersonation endpoints, metrics.
 4. Phase 3: Stripe **test-mode** Billing, webhook inbox, invoices, reconciliation, reports.
 5. M2.5 Android player: needs a real device and the hardware/EMM decision (D-017).

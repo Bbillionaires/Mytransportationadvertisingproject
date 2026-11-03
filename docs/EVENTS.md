@@ -42,6 +42,8 @@ These definitions drive billing and payouts. They are **DECISION REQUIRED (D-027
 ## 3. Outcomes
 **INVALID** (never counts): unknown or unapproved campaign or creative; event outside the campaign window; unknown or unapproved video; tablet not ACTIVE at event time (from `device_status_history`); tablet not assigned to a vehicle at event time; future timestamp; older than 7 days; impossible duration (visible > wall clock or media length, or muted > visible); overlapping video playback on the same tablet; a second click on the same campaign within 10 min; idle or over-long active segment.
 
+Campaign terms (session 4): `OUTSIDE_SCHEDULE` (outside the campaign's daypart in its time zone), `MARKET_NOT_TARGETED` (the tablet's fleet market is not targeted), and `FREQUENCY_CAP_EXCEEDED` (more qualified views on one tablet in a rolling hour than the advertiser's cap) are also INVALID, so advertisers never pay for delivery outside their terms.
+
 **HELD_REVIEW** (counts only after a person with `events.review` approves it):
 - `OFFLINE_DELAYED`: received > 10 min after occurring. Offline playback never becomes revenue automatically (spec invariant 12).
 - `RATE_ANOMALY`: more than 40 qualified ad views on one tablet in a rolling hour, across all campaigns.

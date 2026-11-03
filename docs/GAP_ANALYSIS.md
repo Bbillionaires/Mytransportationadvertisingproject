@@ -13,7 +13,7 @@
 | Driver pool and commissions | Exact 50/25/25 pool, eligibility from DB, 15% commission routing | Anti-idle active-time computation, driver dashboard, statements | 2, 4 |
 | Purchase attribution | Commission batches (with/without creator) funded from receivable | Click/coupon capture, conversion API, dedupe, windows, refunds reversing commissions, disputes | 4 |
 | Admin console | Shell: sign-in, MFA, orgs, trial balance, rules, audit | All management screens and write actions, approval queues, scheduling, emergency override | 1–2 |
-| Advertiser portal | — | Entire portal | 2 |
+| Advertiser portal | Self-registration, campaigns, creatives, submit/pause/resume/end, metrics, prepaid balance, console views | Full UI, media upload, invoices, refund history, team users UI | 2–3 |
 | Tablet player (Android) | Server side: enrollment, signed heartbeat, remote commands, assignments | Native app, kiosk enrollment, playback, caching, offline queue, restricted webview | 2 |
 | Geofenced promotions | — | Eligibility engine, cooldowns, privacy minimization | 5 |
 | Coupons, rewards, games | Reward liability account (2300) | Everything else; chance-based games disabled pending legal review | 5 |

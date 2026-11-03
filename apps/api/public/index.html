@@ -19,7 +19,7 @@
 </head>
 <body>
 <header><h1>Rideshare Media Network · Admin</h1><span class="tag">Phase 1 shell — server enforces every permission</span>
-  <nav id="nav" hidden><button data-v="me">Me</button> <button data-v="orgs">Organizations</button> <button data-v="tb">Trial balance</button> <button data-v="rules">Revenue rules</button> <button data-v="audit">Audit log</button> <button id="logout">Sign out</button></nav>
+  <nav id="nav" hidden><button data-v="me">Me</button> <button data-v="orgs">Organizations</button> <button data-v="tb">Trial balance</button> <button data-v="rules">Revenue rules</button> <button data-v="audit">Audit log</button> <button data-v="campaigns">Campaigns</button> <button data-v="review">Review queue</button> <button id="logout">Sign out</button></nav>
 </header>
 <main>
   <section class="card" id="login">
@@ -51,6 +51,26 @@ const views = {
   async orgs() { const o = await api('/v1/orgs'); return '<h2>Organizations</h2>' + table(o.items, [['Name', 'name'], ['Kind', 'kind'], ['Status', 'status'], ['ID', 'id']]); },
   async tb() { const t = await api('/v1/finance/trial-balance'); return `<h2>Trial balance <span class="${t.balanced ? 'ok' : 'err'}">${t.balanced ? 'balanced' : 'UNBALANCED'}</span></h2>` + table(t.rows, [['Account', 'accountCode'], ['Name', 'name'], ['CCY', 'currency'], ['Debit', 'debit', cents], ['Credit', 'credit', cents], ['Balance', 'balance', cents]]); },
   async rules() { const r = await api('/v1/finance/revenue-rules'); return '<h2>Revenue split rules</h2>' + table(r.items, [['Category', 'category'], ['v', 'version'], ['Driver bps', 'driver_bps'], ['Creator bps', 'creator_bps'], ['Platform bps', 'platform_bps'], ['From', 'effective_from'], ['To', 'effective_to'], ['Status', 'status']]); },
+  async campaigns() {
+    const m = await api('/v1/me');
+    const advs = m.memberships.filter((x) => x.orgKind === 'ADVERTISER');
+    if (!advs.length) return '<h2>Campaigns</h2><p class="tag">Campaigns are shown to advertiser accounts.</p>';
+    let out = '';
+    for (const a of advs) {
+      const [c, b] = await Promise.all([api(`/v1/orgs/${a.orgId}/campaigns`), api(`/v1/orgs/${a.orgId}/balance`)]);
+      const usd = (b.balances.USD || { prepaidBalance: '0' }).prepaidBalance;
+      out += `<h2>Campaigns</h2><p>Prepaid balance (USD): <strong>${esc(cents(usd))}</strong></p>` + table(c.items.map((x) => ({ ...x, rate: x.rateMinor, sched: `${x.schedule.timezone} ${x.schedule.startMinute}-${x.schedule.endMinute}` })),
+        [['Name', 'name'], ['Status', 'status'], ['Category', 'category'], ['Pricing', 'pricingModel'], ['Rate', 'rate', cents], ['Starts', 'startsAt'], ['Ends', 'endsAt'], ['Schedule', 'sched'], ['Review note', 'reviewNote']]);
+    }
+    return out;
+  },
+  async review() {
+    const q = await api('/v1/review/campaigns');
+    if (!q.campaigns.length) return '<h2>Review queue</h2><p class="tag">Nothing awaiting review.</p>';
+    return '<h2>Review queue</h2>' + q.campaigns.map((c) => `<div class="card"><h3>${esc(c.name)} <span class="tag">${esc(c.advertiserName)} · ${esc(c.category)} · ${esc(c.destinationUrl || 'no destination')}</span></h3>` +
+      table(c.creatives, [['Creative', 'name'], ['Kind', 'kind'], ['Headline', 'headline'], ['Media', 'mediaKey'], ['Status', 'status']]) +
+      `<p><button data-approve="${esc(c.id)}">Approve campaign and all pending creatives</button> <button data-reject="${esc(c.id)}">Reject…</button></p></div>`).join('');
+  },
   async audit() { const a = await api('/v1/audit?limit=100'); return '<h2>Audit log (latest 100)</h2>' + table(a.items, [['#', 'id'], ['When', 'occurred_at'], ['Action', 'action'], ['Target', 'target_type'], ['Target ID', 'target_id'], ['Actor', 'actor_user_id']]); },
 };
 async function show(v) {
@@ -67,6 +87,20 @@ $('#lf').onsubmit = async (e) => { e.preventDefault(); $('#lmsg').textContent = 
 $('#mf').onsubmit = async (e) => { e.preventDefault();
   try { await api('/v1/auth/mfa/verify', { method: 'POST', body: JSON.stringify({ code: $('#code').value }) }); signedIn(); } catch (err) { $('#lmsg').textContent = err.message; } };
 $('#nav').onclick = (e) => { if (e.target.dataset.v) show(e.target.dataset.v); };
+$('#view').onclick = async (e) => {
+  const approve = e.target.dataset.approve, reject = e.target.dataset.reject;
+  if (!approve && !reject) return;
+  try {
+    const q = await api('/v1/review/campaigns');
+    const c = q.campaigns.find((x) => x.id === (approve || reject));
+    const pending = c.creatives.filter((k) => k.status === 'PENDING_REVIEW');
+    const note = approve ? (prompt('Approval note (min 5 characters):', 'Meets advertising policy') || '') : (prompt('Rejection reason shown to the advertiser:') || '');
+    if (note.length < 5) return;
+    await api(`/v1/review/campaigns/${c.id}/decision`, { method: 'POST', body: JSON.stringify({ decision: approve ? 'APPROVE' : 'REJECT', note,
+      creatives: approve ? pending.map((k) => ({ creativeId: k.id, decision: 'APPROVE' })) : [] }) });
+    show('review');
+  } catch (err) { alert(err.message); }
+};
 $('#logout').onclick = async () => { await api('/v1/auth/logout', { method: 'POST', body: '{}' }).catch(() => {}); sessionStorage.removeItem('rmn_token'); location.reload(); };
 if (token) api('/v1/me').then(signedIn).catch(() => sessionStorage.removeItem('rmn_token'));
 </script>

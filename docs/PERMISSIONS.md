@@ -23,6 +23,9 @@ The source of truth is the `role_permissions` table (migration 0001); this table
 | finance.allocation.post | ✔ | ✔ | ✔ | | | | | | | |
 | driver.self.read | | | | | | | | ✔ | | |
 | events.validate | ✔ | ✔ | ✔ | | | | | | | |
+| campaign.read | | ✔ | | | | | | | ✔ own (+ advertiser_member) | |
+| campaign.manage | | ✔ | | | | | | | ✔ own | |
+| campaign.review | ✔ | ✔ | | | | | | | | |
 | events.review | ✔ | ✔ | | ✔ | | | | | | |
 
 ¹ Separation of duties applies to everyone, super admins included: nobody can approve their own journal request, rules need two approvers who are not the drafter, and DB `CHECK` constraints back this up.
@@ -33,4 +36,6 @@ The source of truth is the `role_permissions` table (migration 0001); this table
 - Tenant admins can create new users in their org but cannot attach users who already exist elsewhere (prevents account discovery).
 - Only platform staff can mark a driver `ELIGIBLE` for earnings.
 
-**Planned roles:** `advertiser_member` (read-only campaigns), `moderator`, `payout_operator`, `tax_reviewer`, `rider` (separate rider identity, not an org membership).
+**Platform `moderator` role** (session 4): `campaign.review` + `campaign.read`. A reviewer cannot approve campaigns of an organization they belong to.
+
+**Planned roles:** `payout_operator`, `tax_reviewer`, `rider` (separate rider identity, not an org membership).

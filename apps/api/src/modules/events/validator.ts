@@ -1,5 +1,6 @@
 import type { Db, Tx } from '../../db/pool.js';
 import { withTx } from '../../db/pool.js';
+import { isScheduleActive } from '../campaigns/schedule.js';
 import {
   classifyActiveSegment, classifyAd, classifyContent, decideStatus, exposureIsPossible, POLICY_V1, POLICY_VERSION, timingReasons, type Reason,
 } from './policy.js';
@@ -11,17 +12,18 @@ const shift = (iso: string, offsetMs: number) => new Date(new Date(iso).getTime(
 async function deviceContext(tx: Tx, deviceId: string, at: Date) {
   const s = await tx.query(`SELECT status FROM device_status_history WHERE device_id = $1 AND changed_at <= $2 ORDER BY changed_at DESC, id DESC LIMIT 1`, [deviceId, at]);
   const a = await tx.query(
-    `SELECT org_id, vehicle_id, driver_id FROM device_assignments WHERE device_id = $1 AND tstzrange(starts_at, ends_at) @> $2::timestamptz`,
+    `SELECT da.org_id, da.vehicle_id, da.driver_id, f.market FROM device_assignments da JOIN vehicles v ON v.id = da.vehicle_id JOIN fleets f ON f.id = v.fleet_id
+      WHERE da.device_id = $1 AND tstzrange(da.starts_at, da.ends_at) @> $2::timestamptz`,
     [deviceId, at],
   );
   const reasons: Reason[] = [];
   if (s.rows[0]?.status !== 'ACTIVE') reasons.push('DEVICE_NOT_ACTIVE');
   if (!a.rows[0]) reasons.push('NOT_ASSIGNED_TO_VEHICLE');
-  return { reasons, fleetOrgId: a.rows[0]?.org_id ?? null, vehicleId: a.rows[0]?.vehicle_id ?? null, driverId: a.rows[0]?.driver_id ?? null };
+  return { reasons, market: (a.rows[0]?.market ?? null) as string | null, fleetOrgId: a.rows[0]?.org_id ?? null, vehicleId: a.rows[0]?.vehicle_id ?? null, driverId: a.rows[0]?.driver_id ?? null };
 }
 
-async function campaignChecks(tx: Tx, campaignId: string, creativeId: string, at: Date) {
-  const c = await tx.query('SELECT id, status, starts_at, ends_at FROM campaigns WHERE id = $1', [campaignId]);
+async function campaignChecks(tx: Tx, campaignId: string, creativeId: string, at: Date, market: string | null) {
+  const c = await tx.query('SELECT * FROM campaigns WHERE id = $1', [campaignId]);
   const cr = await tx.query('SELECT id, campaign_id, kind, status, duration_ms FROM creatives WHERE id = $1', [creativeId]);
   const reasons: Reason[] = [];
   const camp = c.rows[0], creative = cr.rows[0];
@@ -29,12 +31,14 @@ async function campaignChecks(tx: Tx, campaignId: string, creativeId: string, at
   else {
     if (camp.status !== 'APPROVED') reasons.push('CAMPAIGN_NOT_APPROVED');
     if (at < camp.starts_at || at >= camp.ends_at) reasons.push('OUTSIDE_CAMPAIGN_WINDOW');
+    else if (!isScheduleActive({ timezone: camp.timezone, daysOfWeek: camp.days_of_week, startMinute: camp.start_minute, endMinute: camp.end_minute }, at)) reasons.push('OUTSIDE_SCHEDULE');
+    if (camp.markets.length > 0 && (market === null || !camp.markets.includes(market))) reasons.push('MARKET_NOT_TARGETED');
   }
   if (!creative || creative.campaign_id !== campaignId) reasons.push('CREATIVE_MISMATCH');
   else if (creative.status !== 'APPROVED') reasons.push('CREATIVE_NOT_APPROVED');
   const late = await tx.query(`SELECT 1 FROM allocation_windows WHERE campaign_id = $1 AND tstzrange(period_start, period_end) @> $2::timestamptz`, [campaignId, at]);
   if (late.rows[0]) reasons.push('LATE_AFTER_ALLOCATION');
-  return { reasons, creative: creative && creative.campaign_id === campaignId ? creative : null, known: !!camp };
+  return { reasons, creative: creative && creative.campaign_id === campaignId ? creative : null, known: !!camp, frequencyCap: (camp?.frequency_cap_per_hour ?? null) as number | null };
 }
 
 /** Approved adjacent content attributes the ad to that content's creator; anything else is unattributed. */
@@ -76,7 +80,7 @@ async function validateOne(tx: Tx, e: RawRow) {
     Object.assign(row, { visible_ms: p.visibleMs, completed: !!p.completed });
     let isVideoMedia = true;
     if (e.type === 'AD_PLAYBACK') {
-      const cc = await campaignChecks(tx, p.campaignId, p.creativeId, x.startedAt);
+      const cc = await campaignChecks(tx, p.campaignId, p.creativeId, x.startedAt, ctx.market);
       reasons.push(...cc.reasons);
       Object.assign(row, { campaign_id: cc.known ? p.campaignId : null, creative_id: cc.creative ? p.creativeId : null, skipped: !!p.skipped });
       const v = await approvedVideo(tx, p.contentVideoId);
@@ -93,6 +97,14 @@ async function validateOne(tx: Tx, e: RawRow) {
             [e.device_id, x.startedAt],
           );
           if (n.rows[0].n >= POLICY_V1.maxQualifiedAdViewsPerHour) reasons.push('RATE_ANOMALY');
+          if (cc.frequencyCap !== null) {
+            // The advertiser's own frequency cap: views beyond it on one tablet in a rolling hour are never billed.
+            const f = await tx.query(
+              `SELECT count(*)::int n FROM validated_events WHERE device_id = $1 AND campaign_id = $2 AND type = 'AD_PLAYBACK' AND qualified AND status IN ('VALID','HELD_REVIEW')
+                 AND occurred_at > $3::timestamptz - interval '1 hour' AND occurred_at <= $3::timestamptz`,
+              [e.device_id, p.campaignId, x.startedAt]);
+            if (f.rows[0].n >= cc.frequencyCap) reasons.push('FREQUENCY_CAP_EXCEEDED');
+          }
         }
       }
     } else {
@@ -108,7 +120,7 @@ async function validateOne(tx: Tx, e: RawRow) {
     }
     if (isVideoMedia && (await overlapsPlayback(tx, e.device_id, x.startedAt, x.endedAt))) reasons.push('OVERLAPPING_PLAYBACK');
   } else if (e.type === 'CLICK') {
-    const cc = await campaignChecks(tx, p.campaignId, p.creativeId, e.occurred_at);
+    const cc = await campaignChecks(tx, p.campaignId, p.creativeId, e.occurred_at, ctx.market);
     reasons.push(...cc.reasons);
     Object.assign(row, { campaign_id: cc.known ? p.campaignId : null, creative_id: cc.creative ? p.creativeId : null, click: true });
     const v = await approvedVideo(tx, p.contentVideoId);

@@ -15,6 +15,8 @@ import { ledgerRoutes } from './modules/ledger/routes.js';
 import { revenueRoutes } from './modules/revenue/routes.js';
 import { eventIngestRoutes } from './modules/events/ingest.js';
 import { eventRoutes } from './modules/events/routes.js';
+import { campaignRoutes } from './modules/campaigns/routes.js';
+import { playlistRoutes } from './modules/campaigns/playlist.js';
 
 /** Postgres error codes raised by our integrity triggers/constraints, surfaced as client errors. */
 const PG_CLIENT_ERRORS: Record<string, [number, string]> = {
@@ -81,6 +83,8 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
   await app.register(revenueRoutes, { db });
   await app.register(eventIngestRoutes, { db, config });
   await app.register(eventRoutes, { db, config });
+  await app.register(campaignRoutes, { db });
+  await app.register(playlistRoutes, { db, config });
 
   // The admin shell is a single static page; all data comes from the permission-checked API.
   const adminHtml = await readFile(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/index.html'), 'utf8');

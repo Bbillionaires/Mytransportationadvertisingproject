@@ -104,10 +104,26 @@ Phase 2 note: once the validated-event pipeline exists, creator/driver metrics w
 | GET | `/v1/finance/campaigns/:id/metrics?from&to` | `finance.read` |
 | POST | `/v1/finance/campaigns/:id/allocation-windows[/preview]` | `finance.allocation.post` / `finance.read` `{idempotencyKey, periodStart, periodEnd, entryDate, deductions[]}` |
 
+### Campaigns, review and playlist (session 4)
+| Method | Path | Auth |
+|---|---|---|
+| POST | `/v1/advertisers/register` | public (3/min) `{organizationName, email, displayName, password}` |
+| GET/POST | `/v1/orgs/:orgId/campaigns` | `campaign.read` / `campaign.manage` |
+| GET/PATCH | `/v1/orgs/:orgId/campaigns/:id` | `campaign.read` / `campaign.manage` (billing terms frozen after submit → 403) |
+| POST | `/v1/orgs/:orgId/campaigns/:id/creatives` | `campaign.manage` `{name, kind: VIDEO\|BANNER\|DISPLAY, durationMs?, headline?, bodyText?, mediaKey?, destinationUrl?}` |
+| POST | `/v1/orgs/:orgId/campaigns/:id/{submit,pause,resume,end}` | `campaign.manage` |
+| GET | `/v1/orgs/:orgId/campaigns/:id/metrics?from&to` | `campaign.read` |
+| GET | `/v1/orgs/:orgId/balance` | `campaign.read` (prepaid, refunds pending, commissions owed) |
+| GET | `/v1/review/campaigns` | `campaign.review` (MFA) |
+| POST | `/v1/review/campaigns/:id/decision` | `campaign.review` `{decision, note, creatives[{creativeId, decision, note?}]}`; every pending creative must be decided to approve |
+| POST | `/v1/review/creatives/:id/decision` | `campaign.review` (new creative on a live campaign, or withdrawal) |
+| GET | `/v1/devices/playlist` | **signed device** → `{playbackAllowed, market, validUntil, ads[], content[]}` with signed expiring media URLs |
+
+Campaign fields: `category`, `pricingModel` (CPM \| CPQV), `rateMinor`, `startsAt`, `endsAt`, `destinationUrl` (https only), `markets[]` (empty = all), `timezone`, `daysOfWeek[]` (0 = Sunday), `startMinute`, `endMinute` (overnight allowed), `frequencyCapPerHour`, `priority` 1–10, `skipDelaySeconds`.
+
 ## Planned (Phase 2–6, contracts to be versioned when built)
 - Media: `POST /v1/creators/:id/videos` (resumable upload → transcode → moderation HOLD), `GET /v1/videos/:id`, takedown/appeal endpoints.
-- Campaigns: `/v1/advertisers/:orgId/campaigns`, `/creatives`, `/schedules`, `/geofences`, submit-for-review; admin approval queue.
-- Tablet: `GET /v1/devices/playlist` (signed, returns signed media URLs and expirations).
+- Campaigns: geofences and per-campaign budgets.
 - Subscriptions: `/v1/drivers/me/subscription` (Stripe Billing test mode), `POST /v1/webhooks/stripe` (signature-verified inbox).
 - Attribution: `POST /v1/conversions` (advertiser API key, HMAC-signed, deduped by advertiser order ID), refunds/cancellations.
 - Payouts: `/v1/finance/payout-batches` (dual approval), provider onboarding links.

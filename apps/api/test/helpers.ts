@@ -13,7 +13,7 @@ export interface Ctx { app: FastifyInstance; db: Db; config: Config }
 let pwHash: string | undefined;
 
 export async function setupApp(): Promise<Ctx> {
-  const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: TEST_DB, APP_ENCRYPTION_KEY: randomBytes(32).toString('base64'), LOG_LEVEL: 'silent', ALLOCATION_SETTLE_MINUTES: '0' });
+  const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: TEST_DB, APP_ENCRYPTION_KEY: randomBytes(32).toString('base64'), LOG_LEVEL: 'silent', ALLOCATION_SETTLE_MINUTES: '0', MEDIA_SIGNING_KEY: randomBytes(32).toString('base64'), MEDIA_BASE_URL: 'https://cdn.example.test' });
   const db = createPool(config.DATABASE_URL);
   const app = await buildApp({ config, db, logger: false });
   return { app, db, config };
@@ -67,8 +67,10 @@ export class FakeTablet {
     const sig = sign(null, deviceSigningPayload(method, path, ts, nonce, body), this.privateKey).toString('base64');
     return { 'content-type': 'application/json', 'x-device-id': this.deviceId!, 'x-device-timestamp': ts, 'x-device-nonce': nonce, 'x-device-signature': sig };
   }
-  async call(method: 'POST', path: string, payload: object, over: { ts?: number; nonce?: string } = {}) {
-    const body = JSON.stringify(payload);
-    return this.app.inject({ method, url: path, payload: body, headers: this.signedHeaders(method, path, body, over) });
+  async call(method: 'POST' | 'GET', path: string, payload?: object, over: { ts?: number; nonce?: string } = {}) {
+    const body = payload === undefined ? '' : JSON.stringify(payload);
+    const headers: Record<string, string> = this.signedHeaders(method, path, body, over);
+    if (!body) delete headers['content-type'];
+    return this.app.inject({ method, url: path, ...(body ? { payload: body } : {}), headers });
   }
 }
