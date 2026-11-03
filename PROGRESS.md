@@ -142,8 +142,25 @@ Test totals: finance-core 28, API 84 (all passing).
 
 R-020 (overspend between allocations) is mitigated. Test totals: finance-core 28, API 91.
 
+## 2026-11-03 — Session 7: payments in test mode (M3.1–M3.3, M3.5) ✅ (Stripe round-trip pending)
+
+| Item | Status | Evidence |
+|---|---|---|
+| Payment provider interface; Stripe REST client (test keys only, form encoding, idempotency keys) | ✅ unit | `payments.test.ts` (mocked transport) |
+| In-process Stripe simulator for dev/demo/tests | ✅ | `payments.test.ts` |
+| Signed webhook inbox: signature + timestamp check, per-event dedupe, live-mode events refused, retry with backoff, give-up → exception | ✅ | `payments.test.ts` |
+| Driver $30 subscription: disclosure acceptance, checkout, status from webhooks, out-of-order safe, tax to 2100, failed renewal, cancel at period end, invoices | ✅ | `payments.test.ts` |
+| Advertiser prepayments: checkout, credit on confirmation only, receipt, idempotent | ✅ | `payments.test.ts` |
+| Prepayment refunds: capped by unrefunded and uncommitted funds, second approver, processor refund, ledger on confirmation, credit note | ✅ | `payments.test.ts` |
+| Disputes → exception | ✅ | `payments.test.ts` |
+| Reconciliation: match charges and refunds, book fees and payouts, missing/unknown/mismatch/balance-drift exceptions, idempotent re-runs | ✅ | `payments.test.ts` |
+| Period close blocked by open reconciliation exceptions | ✅ | `payments.test.ts` |
+| Real Stripe test-account round-trip (R-025) | ⬜ | Needs your Stripe test keys: docs/PAYMENTS.md checklist |
+
+Test totals: finance-core 28, API 104.
+
 ### Next steps (in order)
-1. Phase 3 (test mode): Stripe Billing for the $30 driver subscription and advertiser prepayments, signed idempotent webhook inbox, invoices, reconciliation runs.
+1. Run the Stripe test-mode checklist with real test keys (R-025).
 2. Phase 4: payouts to creators/drivers (dual-approved batches, payout ≤ payable), statements and dashboards.
 3. Phase 1 remainder: email verification, invitations/password reset, unlock, impersonation endpoints, metrics.
 4. M2.5 Android player: needs a real device and the hardware/EMM decision (D-017).

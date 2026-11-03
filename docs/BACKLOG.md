@@ -27,11 +27,11 @@ Each milestone is done only when its criteria pass in CI against PostgreSQL. It 
 - 🟡 **M2.7 Advertiser portal** (session 4: self-registration, campaign/creative API, metrics, balance, basic console views; full portal UI with uploads remains): self-registration, scoped users, metrics (impressions … ROI), never other advertisers' data.
 
 ## Phase 3 — Financial foundation
-- **M3.1 Stripe test-mode Billing** for the $30 driver subscription. *AC:* subscription receipts post only to 4200; cancellation transparent.
-- **M3.2 Webhook inbox:** signature verification, unique event ids, retries, outbox. *AC:* duplicate webhooks never double-post.
-- **M3.3 Invoices and advertiser prepayments** with tax lines (2100).
+- ✅ **M3.1 Stripe test-mode Billing** (session 7; real Stripe run pending, R-025) for the $30 driver subscription. *AC:* subscription receipts post only to 4200; cancellation transparent.
+- ✅ **M3.2 Webhook inbox** (session 7): signature verification, unique event ids, retries, outbox. *AC:* duplicate webhooks never double-post.
+- 🟡 **M3.3 Invoices and advertiser prepayments** (session 7: prepayments, receipts, credit notes, subscription invoices; commission invoicing and tax engine remain) with tax lines (2100).
 - ✅ **M3.4 Refunds/chargebacks → allocation reversals** (session 3) via `proportionalReversal`; clawback receivable for paid shares. *AC:* invariant 9.
-- **M3.5 Reconciliation runs** and exception queue; period-close checklist.
+- ✅ **M3.5 Reconciliation runs** (session 7) and exception queue; period-close checklist.
 - **M3.6 Reports:** GL, trial balance, P&L, balance sheet, cash flow, receivables, liabilities, CSV/PDF.
 
 ## Phase 4 — Monetization

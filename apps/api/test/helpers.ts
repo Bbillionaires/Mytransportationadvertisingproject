@@ -13,10 +13,10 @@ export interface Ctx { app: FastifyInstance; db: Db; config: Config }
 
 let pwHash: string | undefined;
 
-export async function setupApp(): Promise<Ctx> {
-  const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: TEST_DB, APP_ENCRYPTION_KEY: randomBytes(32).toString('base64'), LOG_LEVEL: 'silent', ALLOCATION_SETTLE_MINUTES: '0', ALLOCATION_WINDOW_MINUTES: '1', MEDIA_SIGNING_KEY: randomBytes(32).toString('base64'), MEDIA_BASE_URL: 'https://cdn.example.test', MEDIA_ROOT: `${tmpdir()}/rmn-test-media` });
+export async function setupApp(opts: { paymentProvider?: import('../src/modules/payments/provider.js').PaymentProvider } = {}): Promise<Ctx> {
+  const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: TEST_DB, APP_ENCRYPTION_KEY: randomBytes(32).toString('base64'), LOG_LEVEL: 'silent', ALLOCATION_SETTLE_MINUTES: '0', ALLOCATION_WINDOW_MINUTES: '1', MEDIA_SIGNING_KEY: randomBytes(32).toString('base64'), MEDIA_BASE_URL: 'https://cdn.example.test', MEDIA_ROOT: `${tmpdir()}/rmn-test-media`, STRIPE_WEBHOOK_SECRET: 'whsec_testsecret123' });
   const db = createPool(config.DATABASE_URL);
-  const app = await buildApp({ config, db, logger: false });
+  const app = await buildApp({ config, db, logger: false, paymentProvider: opts.paymentProvider });
   return { app, db, config };
 }
 

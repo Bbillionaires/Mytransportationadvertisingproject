@@ -8,6 +8,8 @@ import { currency, idemKey, isoDate, minor, parse, uuid } from '../../lib/valida
 import { actorOf, authorize } from '../../auth/context.js';
 import { postEntry, reverseEntry, trialBalance, validateEntry, type EntryInput } from './service.js';
 import { postReversal } from '../revenue/reversals.js';
+import type { PaymentProvider } from '../payments/provider.js';
+import { advertiserAvailableMilli } from '../campaigns/budget.js';
 
 const lineSchema = z.object({
   accountCode: z.string().regex(/^\d{4}$/),
@@ -31,7 +33,7 @@ const manualSchema = z.object({
 const serializeLines = (lines: EntryInput['lines']) => lines.map((l) => ({ ...l, debit: l.debit?.toString(), credit: l.credit?.toString() }));
 const deserializeLines = (lines: any[]): EntryInput['lines'] => lines.map((l) => ({ ...l, debit: l.debit ? BigInt(l.debit) : undefined, credit: l.credit ? BigInt(l.credit) : undefined }));
 
-export async function ledgerRoutes(app: FastifyInstance, { db }: { db: Db }) {
+export async function ledgerRoutes(app: FastifyInstance, { db, provider }: { db: Db; provider: PaymentProvider }) {
   app.get('/v1/finance/accounts', async (req) => {
     await authorize(db, req, 'finance.read');
     return { items: (await db.query('SELECT * FROM ledger_accounts ORDER BY code')).rows };
@@ -92,6 +94,9 @@ export async function ledgerRoutes(app: FastifyInstance, { db }: { db: Db }) {
         [id],
       );
       if (pending.rows[0].n > 0) throw conflict(`${pending.rows[0].n} pending journal request(s) are dated in this period; decide them before closing`);
+      const exc = await tx.query(
+        `SELECT count(*)::int n FROM reconciliation_exceptions x, accounting_periods p WHERE p.id = $1 AND x.status = 'OPEN' AND x.occurred_at::date <= p.period_end`, [id]);
+      if (exc.rows[0].n > 0) throw conflict(`${exc.rows[0].n} open reconciliation exception(s) must be resolved before closing`);
       const p = await tx.query(`UPDATE accounting_periods SET status = 'CLOSED', closed_by = $2, closed_at = now() WHERE id = $1 RETURNING *`, [id, auth.userId]);
       if (!p.rows[0]) throw notFound('period not found');
       const tb = await trialBalance(tx, p.rows[0].period_end.toISOString().slice(0, 10));
@@ -173,6 +178,17 @@ export async function ledgerRoutes(app: FastifyInstance, { db }: { db: Db }) {
           idempotencyKey: jr.idempotency_key, batchId: p.batchId, type: p.type, amount: BigInt(p.amount), entryDate: p.entryDate, reason: jr.reason, processor: p.processor ?? null,
         }, jr.requested_by, auth.userId);
         posted = { id: r.journalEntryId };
+      } else if (p.kind === 'PREPAYMENT_REFUND') {
+        // Approved: ask the processor to refund. The ledger posts when its charge.refunded webhook arrives (the source of truth).
+        const pay = (await tx.query('SELECT * FROM payments WHERE id = $1 FOR UPDATE', [p.paymentId])).rows[0];
+        const amount = BigInt(p.amount);
+        if (amount > BigInt(pay.amount_minor) - BigInt(pay.refunded_minor)) throw conflict('amount now exceeds the unrefunded payment');
+        if (amount * 1000n > await advertiserAvailableMilli(tx, pay.org_id, pay.currency.trim(), new Date())) throw conflict('funds were committed to delivery since the request; refund would exceed uncommitted funds');
+        const r = await provider.refund({ paymentIntentId: pay.provider_payment_ref, amountMinor: Number(amount), metadata: { requestId: id, orgId: pay.org_id } });
+        const u = await tx.query(`UPDATE journal_requests SET status = 'APPROVED', decided_by = $2, decided_at = now(), decision_note = $3, provider_ref = $4 WHERE id = $1 RETURNING *`,
+          [id, auth.userId, b.note ?? 'refund submitted to processor; ledger posts on its confirmation', r.id]);
+        await audit(tx, actorOf(req), 'billing.prepayment_refund_approved', { type: 'payment', id: pay.id, orgId: pay.org_id }, { providerRefundId: r.id, amount: p.amount });
+        return u.rows[0];
       } else throw unprocessable('unknown request kind');
       const u = await tx.query(
         `UPDATE journal_requests SET status = 'APPROVED', decided_by = $2, decided_at = now(), decision_note = $3, journal_entry_id = $4 WHERE id = $1 RETURNING *`,

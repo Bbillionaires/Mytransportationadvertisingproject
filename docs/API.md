@@ -151,10 +151,23 @@ Ad creatives (`POST /v1/orgs/:orgId/campaigns/:id/creatives`) now take `uploadId
 | GET | `/v1/orgs/:orgId/balance` | now also `committedUnbilled` and `available` |
 | POST | `/v1/finance/allocation-windows/run` | `finance.allocation.post` → per-campaign ALLOCATED/SKIPPED with reasons |
 
+### Payments, billing and reconciliation (session 7, see `PAYMENTS.md`; test mode only)
+| Method | Path | Auth |
+|---|---|---|
+| POST | `/v1/webhooks/stripe` | Stripe signature (HMAC, 5-minute tolerance); idempotent per event id |
+| GET/POST | `/v1/drivers/me/subscription` | `driver.subscription.manage`; POST needs `{acceptDisclosure: true}` → checkout URL |
+| POST | `/v1/drivers/me/subscription/cancel` | `driver.subscription.manage` (cancel at period end) |
+| GET | `/v1/drivers/me/invoices` | `driver.subscription.manage` |
+| POST | `/v1/orgs/:orgId/prepayments` | `billing.manage` `{amountMinor}` → checkout URL |
+| GET | `/v1/orgs/:orgId/invoices` | `billing.manage` (receipts and credit notes) |
+| POST | `/v1/orgs/:orgId/prepayment-refund-requests` | `finance.reconcile` → approved via journal-requests decision by a different user |
+| GET | `/v1/finance/webhooks`; POST `/v1/finance/webhooks/retry` | `finance.reconcile` |
+| POST | `/v1/finance/reconciliation/runs` | `finance.reconcile` `{from, to, compareBalance}` |
+| GET | `/v1/finance/reconciliation/exceptions`; POST `/:id/resolve` | `finance.reconcile` / `finance.journal.approve` |
+
 ## Planned (Phase 2–6, contracts to be versioned when built)
 - Media: creator playlists/series, object-store adapter, virus scanning.
 - Campaigns: geofences and per-campaign budgets.
-- Subscriptions: `/v1/drivers/me/subscription` (Stripe Billing test mode), `POST /v1/webhooks/stripe` (signature-verified inbox).
 - Attribution: `POST /v1/conversions` (advertiser API key, HMAC-signed, deduped by advertiser order ID), refunds/cancellations.
 - Payouts: `/v1/finance/payout-batches` (dual approval), provider onboarding links.
 - Riders: QR session handoff, coupons, games.

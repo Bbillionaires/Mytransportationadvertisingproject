@@ -117,7 +117,7 @@ Dr 2000 100.00 / Cr 4000 95.00 / Cr 4010 5.00 (unallocated driver share → plat
 ### 5.4 Advertiser-funded sales commission with creator, net $20.00 (from receivable)
 Dr 1100 20.00 / Cr 2210 3.00 / Cr 2200 2.00 / Cr 4100 15.00.
 
-### 5.5 Driver $30 subscription (Phase 3; never enters any pool)
+### 5.5 Driver $30 subscription (implemented in session 7; never enters any pool)
 Dr 1010 30.00 / Cr 4200 Driver subscription revenue [driver] 30.00, then the fee: Dr 5000 / Cr 1010.
 
 ### 5.6 Refund, chargeback or credit after allocation (implemented, D-021, D-030)

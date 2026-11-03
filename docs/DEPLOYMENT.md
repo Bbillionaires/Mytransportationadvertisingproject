@@ -44,5 +44,5 @@ API tests **drop and recreate the `public` schema** of `TEST_DATABASE_URL` (defa
 6. Enable PITR backups and test a restore quarterly. Verify the audit hash chain nightly.
 7. Monitor `/readyz` and alert on 5xx rate, heartbeat gaps, and `trial-balance.balanced = false`.
 8. **Do not** seed synthetic data (`db:seed` refuses in production). Create the platform org and first super admin through a controlled bootstrap with two people present. Draft and dual-approve the real revenue rules with signed contract references.
-9. Run workers: `jobs:validate-events` (every minute), `jobs:allocate-windows` (hourly, alert on non-zero exit) and `jobs:process-media` (continuously; isolated container with ffmpeg, no network, timeouts; R-023). Replace local media storage with an object store + CDN that verifies signed URLs (R-021).
+9. Run workers: `jobs:validate-events` (every minute), `jobs:allocate-windows` (hourly, alert on non-zero exit), `jobs:process-webhooks` (every minute) and `jobs:process-media` (continuously; isolated container with ffmpeg, no network, timeouts; R-023). Replace local media storage with an object store + CDN that verifies signed URLs (R-021).
 10. `LIVE_PAYMENTS_ENABLED` stays `false` (enforced) until D-010 and D-026 are resolved and a real integration verification has passed.

@@ -23,6 +23,13 @@ const schema = z.object({
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024 * 1024),
   /** Opt-in only: let the AI pre-screen auto-approve. Disabled by default; a human decides every case (D-034). */
   MODERATION_AUTO_APPROVE: z.enum(['false']).default('false'),
+  /** 'fake' = in-process Stripe stand-in (dev/demo/tests); 'stripe' = Stripe API with a TEST key. */
+  PAYMENTS_PROVIDER: z.enum(['fake', 'stripe']).default('fake'),
+  STRIPE_SECRET_KEY: z.string().regex(/^sk_test_[A-Za-z0-9]+$/, 'only Stripe test keys (sk_test_…) are accepted').optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().regex(/^whsec_[A-Za-z0-9]+$/, 'STRIPE_WEBHOOK_SECRET must look like whsec_…'),
+  /** Stripe Price for the $30/month driver participation subscription. */
+  STRIPE_DRIVER_PRICE_ID: z.string().default('price_driver_participation_test'),
+  APP_PUBLIC_URL: z.string().url().default('http://127.0.0.1:8080'),
   /** Live money movement is hard-disabled until explicitly approved (see DECISIONS.md D-010). */
   LIVE_PAYMENTS_ENABLED: z.enum(['false']).default('false'),
 });
@@ -37,5 +44,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (parsed.data.NODE_ENV === 'production' && /localhost|127\.0\.0\.1/.test(parsed.data.DATABASE_URL) === false && !/sslmode=require|sslmode=verify/.test(parsed.data.DATABASE_URL)) {
     throw new Error('Production DATABASE_URL must require TLS (sslmode=require or verify-full)');
   }
+  if (parsed.data.PAYMENTS_PROVIDER === 'stripe' && !parsed.data.STRIPE_SECRET_KEY) throw new Error('PAYMENTS_PROVIDER=stripe requires STRIPE_SECRET_KEY (test mode)');
+  if (parsed.data.NODE_ENV === 'production' && parsed.data.PAYMENTS_PROVIDER === 'fake') throw new Error('the fake payment provider cannot run in production');
   return parsed.data;
 }

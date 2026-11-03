@@ -12,7 +12,8 @@
     "db:seed": "tsx src/db/seed.ts",
     "jobs:validate-events": "tsx src/jobs/validate-events.ts",
     "jobs:process-media": "tsx src/jobs/process-media.ts",
-    "jobs:allocate-windows": "tsx src/jobs/allocate-windows.ts"
+    "jobs:allocate-windows": "tsx src/jobs/allocate-windows.ts",
+    "jobs:process-webhooks": "tsx src/jobs/process-webhooks.ts"
   },
   "dependencies": {
     "@fastify/rate-limit": "^10.3.0",
