@@ -10,7 +10,8 @@
     "typecheck": "tsc -p .",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
-    "jobs:validate-events": "tsx src/jobs/validate-events.ts"
+    "jobs:validate-events": "tsx src/jobs/validate-events.ts",
+    "jobs:process-media": "tsx src/jobs/process-media.ts"
   },
   "dependencies": {
     "@fastify/rate-limit": "^10.3.0",

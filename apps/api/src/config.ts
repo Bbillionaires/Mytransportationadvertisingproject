@@ -16,6 +16,11 @@ const schema = z.object({
   MEDIA_SIGNING_KEY: z.string().refine((v) => Buffer.from(v, 'base64').length === 32, 'MEDIA_SIGNING_KEY must be 32 bytes base64'),
   MEDIA_BASE_URL: z.string().url().default('https://media.invalid'),
   PLAYLIST_TTL_MINUTES: z.coerce.number().int().min(1).max(120).default(15),
+  /** Local media storage root (dev/test). Production uses an object-store adapter with the same interface. */
+  MEDIA_ROOT: z.string().default('./var/media'),
+  MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024 * 1024),
+  /** Opt-in only: let the AI pre-screen auto-approve. Disabled by default; a human decides every case (D-034). */
+  MODERATION_AUTO_APPROVE: z.enum(['false']).default('false'),
   /** Live money movement is hard-disabled until explicitly approved (see DECISIONS.md D-010). */
   LIVE_PAYMENTS_ENABLED: z.enum(['false']).default('false'),
 });

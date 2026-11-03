@@ -54,12 +54,11 @@ const COLUMN: Record<string, string> = {
 };
 
 const creativeCreate = z.object({
-  name: z.string().min(1).max(200), kind: z.enum(['VIDEO', 'BANNER', 'DISPLAY']), durationMs: z.number().int().min(1000).max(180_000).optional(),
-  headline: z.string().min(1).max(90).optional(), bodyText: z.string().max(280).optional(), mediaKey: z.string().regex(/^[A-Za-z0-9/_.-]{1,300}$/).optional(),
+  name: z.string().min(1).max(200), kind: z.enum(['VIDEO', 'BANNER', 'DISPLAY']),
+  headline: z.string().min(1).max(90).optional(), bodyText: z.string().max(280).optional(), uploadId: uuid.optional(),
   destinationUrl: httpsUrl.optional(),
 }).superRefine((v, c) => {
-  if (v.kind === 'VIDEO' && (!v.durationMs || !v.mediaKey)) c.addIssue({ code: 'custom', message: 'video creatives need durationMs and mediaKey' });
-  if (v.kind === 'DISPLAY' && !v.mediaKey) c.addIssue({ code: 'custom', message: 'display creatives need mediaKey' });
+  if ((v.kind === 'VIDEO' || v.kind === 'DISPLAY') && !v.uploadId) c.addIssue({ code: 'custom', message: `${v.kind.toLowerCase()} creatives need a processed uploadId` });
   if (v.kind === 'BANNER' && !v.headline) c.addIssue({ code: 'custom', message: 'word/text banners need a headline' });
 });
 
@@ -167,9 +166,16 @@ export async function campaignRoutes(app: FastifyInstance, { db }: { db: Db }) {
     const r = await withTx(db, async (tx) => {
       const c = await ownedCampaign(tx, orgId, id, true);
       if (c.status === 'ENDED') throw conflict('campaign has ended');
+      // Duration and media come from the processed asset (ffprobe), never from the advertiser's claim.
+      let asset: any = null;
+      if (b.uploadId) {
+        asset = (await tx.query(`SELECT a.* FROM media_assets a JOIN media_uploads u ON u.id = a.upload_id WHERE u.id = $1 AND u.org_id = $2 AND u.status = 'READY'`, [b.uploadId, orgId])).rows[0];
+        if (!asset) throw unprocessable('upload not found or not processed yet');
+        if ((b.kind === 'VIDEO') !== (asset.kind === 'VIDEO')) throw unprocessable(`a ${b.kind} creative needs ${b.kind === 'VIDEO' ? 'a video' : 'an image'} upload`);
+      }
       const cr = await tx.query(
-        `INSERT INTO creatives (campaign_id, name, kind, duration_ms, headline, body_text, media_key, destination_url) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-        [id, b.name, b.kind, b.durationMs ?? null, b.headline ?? null, b.bodyText ?? null, b.mediaKey ?? null, b.destinationUrl ?? null]);
+        `INSERT INTO creatives (campaign_id, name, kind, duration_ms, headline, body_text, media_key, destination_url, asset_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+        [id, b.name, b.kind, asset?.duration_ms ?? null, b.headline ?? null, b.bodyText ?? null, asset?.rendition_key ?? null, b.destinationUrl ?? null, asset?.id ?? null]);
       await audit(tx, actorOf(req), 'creative.created', { type: 'creative', id: cr.rows[0].id, orgId }, { campaignId: id, kind: b.kind });
       return cr.rows[0];
     });
@@ -232,11 +238,14 @@ export async function campaignRoutes(app: FastifyInstance, { db }: { db: Db }) {
   app.get('/v1/review/campaigns', async (req) => {
     await authorize(db, req, 'campaign.review');
     const c = await db.query(`SELECT c.*, o.name AS advertiser_name FROM campaigns c JOIN organizations o ON o.id = c.advertiser_org_id WHERE c.status = 'PENDING_REVIEW' ORDER BY c.submitted_at`);
-    const cr = await db.query(`SELECT * FROM creatives WHERE campaign_id = ANY($1::uuid[]) ORDER BY created_at`, [c.rows.map((x) => x.id)]);
+    const cr = await db.query(
+      `SELECT cr.*, (SELECT json_build_object('recommendation', ai_recommendation, 'priority', priority, 'scores', scores, 'findings', findings)
+                       FROM moderation_cases mc WHERE mc.asset_id = cr.asset_id ORDER BY created_at DESC LIMIT 1) AS ai
+         FROM creatives cr WHERE campaign_id = ANY($1::uuid[]) ORDER BY created_at`, [c.rows.map((x) => x.id)]);
     const pendingCreatives = await db.query(
       `SELECT cr.* FROM creatives cr JOIN campaigns c ON c.id = cr.campaign_id WHERE cr.status = 'PENDING_REVIEW' AND c.status IN ('APPROVED','PAUSED') ORDER BY cr.created_at`);
     return {
-      campaigns: c.rows.map((x) => ({ ...toApi(x), advertiserName: x.advertiser_name, creatives: cr.rows.filter((k) => k.campaign_id === x.id).map(creativeApi) })),
+      campaigns: c.rows.map((x) => ({ ...toApi(x), advertiserName: x.advertiser_name, creatives: cr.rows.filter((k) => k.campaign_id === x.id).map((k) => ({ ...creativeApi(k), aiPrescreen: k.ai })) })),
       creativesOnLiveCampaigns: pendingCreatives.rows.map(creativeApi),
     };
   });
@@ -260,6 +269,11 @@ export async function campaignRoutes(app: FastifyInstance, { db }: { db: Db }) {
         if (!pending.includes(d.creativeId)) throw unprocessable(`creative ${d.creativeId} is not pending review on this campaign`);
         await tx.query(`UPDATE creatives SET status = $2, reviewed_by = $3, reviewed_at = now(), review_note = $4 WHERE id = $1`,
           [d.creativeId, d.decision === 'APPROVE' ? 'APPROVED' : 'REJECTED', auth.userId, d.note ?? null]);
+        // The campaign reviewer's decision is the human decision on the creative's media moderation case.
+        await tx.query(
+          `UPDATE moderation_cases SET status = 'DECIDED', decision = $2, decision_note = $3, decided_by = $4, decided_at = now()
+            WHERE status = 'OPEN' AND asset_id = (SELECT asset_id FROM creatives WHERE id = $1)`,
+          [d.creativeId, d.decision, d.note ?? `campaign ${id} review`, auth.userId]);
       }
       if (b.decision === 'APPROVE') {
         const undecided = pending.filter((p) => !b.creatives.some((d) => d.creativeId === p));

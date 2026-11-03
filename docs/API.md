@@ -121,8 +121,30 @@ Phase 2 note: once the validated-event pipeline exists, creator/driver metrics w
 
 Campaign fields: `category`, `pricingModel` (CPM \| CPQV), `rateMinor`, `startsAt`, `endsAt`, `destinationUrl` (https only), `markets[]` (empty = all), `timezone`, `daysOfWeek[]` (0 = Sunday), `startMinute`, `endMinute` (overnight allowed), `frequencyCapPerHour`, `priority` 1–10, `skipDelaySeconds`.
 
+### Media, moderation and rights (session 5, see `MEDIA_MODERATION.md`)
+| Method | Path | Auth |
+|---|---|---|
+| POST | `/v1/orgs/:orgId/uploads` | `media.upload` `{filename, contentType, sizeBytes, sha256}` → `{uploadId, chunkSizeLimit}` |
+| PUT | `/v1/uploads/:id/content` | `media.upload`; `application/octet-stream` chunk ≤ 8 MB with `Content-Range: bytes s-e/total` |
+| POST | `/v1/uploads/:id/complete` | `media.upload` → UPLOADED or FAILED (checksum/type) |
+| GET | `/v1/uploads/:id` | `media.upload` → progress, status, error, asset (duration, size, signed thumbnail) |
+| GET | `/media/<key>?exp&sig` | signed link only; renditions and thumbnails only; supports `Range` |
+| POST | `/v1/creators/register` | public (3/min) `{channelName, email, displayName, password}` |
+| GET | `/v1/orgs/:orgId/channels`, `/v1/orgs/:orgId/videos` | `creator.read` (videos include moderation outcome and notices) |
+| POST | `/v1/orgs/:orgId/videos` | `creator.manage` `{channelId, uploadId, title, description?, attestation{RIGHTS_ATTESTATION_V1 …}}` |
+| GET | `/v1/rights/attestation` | public: current attestation text, version, hash |
+| POST | `/v1/orgs/:orgId/videos/:id/appeal` | `creator.manage` `{statement}` |
+| POST | `/v1/orgs/:orgId/videos/:id/counter-notice` | `creator.manage` `{takedownId, statement, signature, goodFaithBeliefOfMistake, consentToJurisdiction}` |
+| GET | `/v1/moderation/queue`, `/v1/moderation/appeals` | `content.review` (MFA) |
+| POST | `/v1/moderation/cases/:id/decision` | `content.review` `{decision, reasons[], note}` |
+| POST | `/v1/moderation/appeals/:id/decision` | `content.review` `{decision: UPHOLD\|OVERTURN, note}`; not the original reviewer |
+| POST | `/v1/takedowns` | public (5/min) notice → video removed immediately |
+| GET | `/v1/takedowns`; POST `/v1/takedowns/:id/resolve` | `takedown.manage` `{action: RESTORE\|UPHOLD\|WITHDRAWN, note}` |
+
+Ad creatives (`POST /v1/orgs/:orgId/campaigns/:id/creatives`) now take `uploadId` for VIDEO/DISPLAY; `durationMs` and the media key come from the processed asset.
+
 ## Planned (Phase 2–6, contracts to be versioned when built)
-- Media: `POST /v1/creators/:id/videos` (resumable upload → transcode → moderation HOLD), `GET /v1/videos/:id`, takedown/appeal endpoints.
+- Media: creator playlists/series, object-store adapter, virus scanning.
 - Campaigns: geofences and per-campaign budgets.
 - Subscriptions: `/v1/drivers/me/subscription` (Stripe Billing test mode), `POST /v1/webhooks/stripe` (signature-verified inbox).
 - Attribution: `POST /v1/conversions` (advertiser API key, HMAC-signed, deduped by advertiser order ID), refunds/cancellations.

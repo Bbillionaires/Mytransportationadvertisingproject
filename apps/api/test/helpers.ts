@@ -1,4 +1,5 @@
-import { generateKeyPairSync, randomBytes, sign, type KeyObject } from 'node:crypto';
+import { generateKeyPairSync, randomBytes, randomUUID, sign, type KeyObject } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { loadConfig, type Config } from '../src/config.js';
@@ -13,7 +14,7 @@ export interface Ctx { app: FastifyInstance; db: Db; config: Config }
 let pwHash: string | undefined;
 
 export async function setupApp(): Promise<Ctx> {
-  const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: TEST_DB, APP_ENCRYPTION_KEY: randomBytes(32).toString('base64'), LOG_LEVEL: 'silent', ALLOCATION_SETTLE_MINUTES: '0', MEDIA_SIGNING_KEY: randomBytes(32).toString('base64'), MEDIA_BASE_URL: 'https://cdn.example.test' });
+  const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: TEST_DB, APP_ENCRYPTION_KEY: randomBytes(32).toString('base64'), LOG_LEVEL: 'silent', ALLOCATION_SETTLE_MINUTES: '0', MEDIA_SIGNING_KEY: randomBytes(32).toString('base64'), MEDIA_BASE_URL: 'https://cdn.example.test', MEDIA_ROOT: `${tmpdir()}/rmn-test-media` });
   const db = createPool(config.DATABASE_URL);
   const app = await buildApp({ config, db, logger: false });
   return { app, db, config };
@@ -50,6 +51,20 @@ export async function userWithRole(ctx: Ctx, orgId: string, role: string, opts: 
 
 export async function ensureOpenPeriod(db: Db, start = '2026-01-01', end = '2026-12-31') {
   await db.query(`INSERT INTO accounting_periods (period_start, period_end) SELECT $1::date, $2::date WHERE NOT EXISTS (SELECT 1 FROM accounting_periods WHERE daterange(period_start, period_end, '[]') && daterange($1::date, $2::date, '[]'))`, [start, end]);
+}
+
+/** Test fixture: a fully processed media asset (bypasses ffmpeg; the real pipeline is covered in media.test.ts). */
+export async function readyAsset(db: Db, orgId: string, userId: string, kind: 'VIDEO' | 'IMAGE' = 'VIDEO', durationMs = 30_000): Promise<string> {
+  const purpose = (await db.query('SELECT kind FROM organizations WHERE id = $1', [orgId])).rows[0].kind === 'ADVERTISER' ? 'AD_CREATIVE' : 'CREATOR_VIDEO';
+  const up = (await db.query(
+    `INSERT INTO media_uploads (org_id, purpose, filename, declared_type, size_bytes, sha256, received_bytes, status, detected_type, created_by, completed_at, processed_at)
+     VALUES ($1,$2,'fixture',$3,1,$4,1,'READY',$3,$5,now(),now()) RETURNING id`,
+    [orgId, purpose, kind === 'VIDEO' ? 'video/mp4' : 'image/png', '0'.repeat(64), userId])).rows[0].id;
+  const assetId = randomUUID();
+  await db.query(
+    `INSERT INTO media_assets (id, upload_id, org_id, kind, duration_ms, rendition_key, thumbnail_key, probe) VALUES ($1,$2,$3,$4,$5,$6,$7,'{}')`,
+    [assetId, up, orgId, kind, kind === 'VIDEO' ? durationMs : null, `assets/${assetId}/${kind === 'VIDEO' ? '720p.mp4' : 'display.jpg'}`, `assets/${assetId}/thumb.jpg`]);
+  return up;
 }
 
 export class FakeTablet {

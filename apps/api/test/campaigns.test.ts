@@ -3,14 +3,14 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withTx } from '../src/db/pool.js';
 import { verifyMediaSignature } from '../src/lib/media.js';
 import { postEntry } from '../src/modules/ledger/service.js';
-import { ensureOpenPeriod, FakeTablet, org, platformOrg, setupApp, uid, userWithRole, type Ctx } from './helpers.js';
+import { ensureOpenPeriod, FakeTablet, org, platformOrg, readyAsset, setupApp, uid, userWithRole, type Ctx } from './helpers.js';
 
 let ctx: Ctx;
 let moderator: Awaited<ReturnType<typeof userWithRole>>;
 let fleetAdmin: Awaited<ReturnType<typeof userWithRole>>;
 let fleetOrg: string;
 let tablet: FakeTablet;
-const adv: Record<'a' | 'b', { orgId: string; h: Record<string, string>; email: string }> = {} as any;
+const adv: Record<'a' | 'b', { orgId: string; userId: string; h: Record<string, string>; email: string }> = {} as any;
 const M = 60_000;
 const iso = (ms: number) => new Date(ms).toISOString();
 
@@ -19,21 +19,21 @@ const baseCampaign = (over: Record<string, unknown> = {}) => ({
   name: `Campaign ${uid()}`, category: 'FOOD_DRINK', pricingModel: 'CPQV', rateMinor: '50', startsAt: iso(Date.now() - 60 * M), endsAt: iso(Date.now() + 24 * 60 * M),
   destinationUrl: 'https://coffee.example.test/offer', markets: ['Springfield'], ...over,
 });
-const videoCreative = { name: '30s spot', kind: 'VIDEO', durationMs: 30_000, mediaKey: `creatives/${uid()}/spot.mp4`, headline: 'Fresh coffee' };
+const videoCreative = async (key: 'a' | 'b') => ({ name: '30s spot', kind: 'VIDEO', uploadId: await readyAsset(ctx.db, adv[key].orgId, adv[key].userId), headline: 'Fresh coffee' });
 
 async function register(key: 'a' | 'b') {
   const email = `adv-${key}-${uid()}@example.test`;
   const r = await api('POST', '/v1/advertisers/register', {}, { organizationName: `Advertiser ${key.toUpperCase()}`, email, displayName: 'Owner', password: 'a-long-password-123' });
   expect(r.statusCode).toBe(201);
   const login = await api('POST', '/v1/auth/login', {}, { email, password: 'a-long-password-123' });
-  adv[key] = { orgId: r.json().organizationId, h: { authorization: `Bearer ${login.json().token}` }, email };
+  adv[key] = { orgId: r.json().organizationId, userId: r.json().userId, h: { authorization: `Bearer ${login.json().token}` }, email };
 }
 
 /** Full happy path through the API: draft -> creative -> submit -> moderator approval. */
-async function approvedCampaign(key: 'a' | 'b', over: Record<string, unknown> = {}, creative: object = videoCreative) {
+async function approvedCampaign(key: 'a' | 'b', over: Record<string, unknown> = {}) {
   const c = await api('POST', `/v1/orgs/${adv[key].orgId}/campaigns`, adv[key].h, baseCampaign(over));
   expect(c.statusCode, c.body).toBe(201);
-  const cr = await api('POST', `/v1/orgs/${adv[key].orgId}/campaigns/${c.json().id}/creatives`, adv[key].h, { ...creative, mediaKey: (creative as any).mediaKey && `creatives/${uid()}/m.mp4` });
+  const cr = await api('POST', `/v1/orgs/${adv[key].orgId}/campaigns/${c.json().id}/creatives`, adv[key].h, await videoCreative(key));
   expect(cr.statusCode, cr.body).toBe(201);
   expect((await api('POST', `/v1/orgs/${adv[key].orgId}/campaigns/${c.json().id}/submit`, adv[key].h, {})).statusCode).toBe(200);
   const d = await api('POST', `/v1/review/campaigns/${c.json().id}/decision`, moderator.h, { decision: 'APPROVE', note: 'meets ad policy', creatives: [{ creativeId: cr.json().id, decision: 'APPROVE' }] });
@@ -85,7 +85,8 @@ describe('advertiser self-service', () => {
     const url = `/v1/orgs/${adv.a.orgId}/campaigns/${c.id}`;
     expect((await api('POST', `${url}/submit`, adv.a.h, {})).statusCode).toBe(422); // no creatives yet
     expect((await api('POST', `${url}/creatives`, adv.a.h, { name: 'x', kind: 'VIDEO', durationMs: 30_000 })).statusCode).toBe(400); // missing media
-    const video = (await api('POST', `${url}/creatives`, adv.a.h, videoCreative)).json();
+    const video = (await api('POST', `${url}/creatives`, adv.a.h, await videoCreative('a'))).json();
+    expect(video.durationMs).toBe(30_000); // from the probed asset, not the advertiser
     const bannerRes = await api('POST', `${url}/creatives`, adv.a.h, { name: 'banner', kind: 'BANNER', headline: '2-for-1 lattes today' });
     expect(bannerRes.statusCode, bannerRes.body).toBe(201);
     const banner = bannerRes.json();

@@ -109,9 +109,27 @@ Spec invariant 9 (refunds/chargebacks produce balanced reversals and valid liabi
 
 Test totals: finance-core 28, API 72 (all passing).
 
+## 2026-11-03 — Session 5: media upload, moderation and rights (M2.1–M2.3) ✅
+
+| Item | Status | Evidence |
+|---|---|---|
+| Resumable chunked uploads (Content-Range, resume offset), declared size + SHA-256 verified, file type from magic bytes | ✅ | `media.test.ts` |
+| ffprobe/ffmpeg processing: limits, H.264/AAC 720p faststart rendition, thumbnail, ≤30 sampled frames, 16 kHz audio | ✅ | `media.test.ts` (real ffmpeg) |
+| AI pre-screen via provider interface + deterministic text screen; failures/unavailability → HIGH priority; never auto-publishes | ✅ | `media.test.ts` (invariant 13) |
+| Human moderation queue, policy-coded rejections, immutable findings and decisions, no self-org review | ✅ | `media.test.ts` |
+| Appeals decided by a different reviewer; overturn restores | ✅ | `media.test.ts` |
+| Rights attestation (RIGHTS_ATTESTATION_V1) mandatory and immutable; optional license records | ✅ | `media.test.ts` |
+| Copyright notices: immediate removal, counter-notice, 10-business-day wait, restore/uphold/withdraw | ✅ | `media.test.ts` |
+| Signed rendition delivery with byte ranges; originals never served | ✅ | `media.test.ts` |
+| Creator self-registration, channels, video list with moderation outcome and notices | ✅ | `media.test.ts` |
+| Ad creatives require processed uploads; duration from ffprobe, not the advertiser | ✅ | `campaigns.test.ts`, `media.test.ts` |
+| Media processing job; CI installs ffmpeg | ✅ | `jobs:process-media`, `.github/workflows/ci.yml` |
+| Vision/speech classifier vendor (D-035), object store + CDN (R-021), virus scanning, creator dashboard UI | ⬜ | |
+
+Test totals: finance-core 28, API 84 (all passing).
+
 ### Next steps (in order)
-1. M2.1–M2.3: media upload (resumable, object storage), transcode, fail-closed content moderation for creator videos, rights attestations and takedown/appeal.
-2. Per-campaign budgets with live spend estimate (R-020), then hourly scheduled allocation windows.
-3. Phase 1 remainder: invitations/password reset, unlock, impersonation endpoints, metrics.
-4. Phase 3: Stripe **test-mode** Billing, webhook inbox, invoices, reconciliation, reports.
-5. M2.5 Android player: needs a real device and the hardware/EMM decision (D-017).
+1. Per-campaign budgets with live spend estimate (R-020), then scheduled hourly allocation windows (no manual triggering).
+2. Phase 1 remainder: email verification, invitations/password reset, unlock, impersonation endpoints, metrics.
+3. Phase 3: Stripe **test-mode** Billing, webhook inbox, invoices, reconciliation, reports.
+4. M2.5 Android player: needs a real device and the hardware/EMM decision (D-017).
