@@ -10,6 +10,7 @@ import { conflict, forbidden, notFound, unauthorized, unprocessable, HttpError }
 import { currency, minor, parse, uuid } from '../../lib/validation.js';
 import { actorOf, authorize } from '../../auth/context.js';
 import { authenticateDevice } from '../devices/routes.js';
+import { tabletRider } from '../riders/routes.js';
 import { postAllocation } from '../revenue/service.js';
 import { postingDate } from '../payments/webhooks.js';
 import { SYSTEM_USER_ID } from '../events/scheduler.js';
@@ -22,7 +23,7 @@ const offerApi = (o: any) => ({ id: o.id, campaignId: o.campaign_id, name: o.nam
   couponWindowHours: o.coupon_window_hours, holdDays: o.hold_days, validFrom: o.valid_from, validTo: o.valid_to, status: o.status });
 
 /** Advertiser server-to-server key: `Authorization: Bearer rmnk_<prefix>_<secret>`. Stored only as SHA-256. */
-async function authenticateKey(db: Db, req: FastifyRequest, scope: string) {
+export async function authenticateKey(db: Db, req: FastifyRequest, scope: string) {
   const m = /^Bearer rmnk_([a-f0-9]{12})_([A-Za-z0-9_-]{40,})$/.exec(String(req.headers.authorization ?? ''));
   if (!m) throw unauthorized('integration API key required');
   const k = (await db.query(`SELECT k.*, o.status AS org_status FROM integration_keys k JOIN organizations o ON o.id = k.org_id WHERE k.prefix = $1`, [m[1]])).rows[0];
@@ -213,14 +214,14 @@ export async function commissionRoutes(app: FastifyInstance, { db, config }: { d
   app.post('/v1/orgs/:orgId/integration-keys', async (req, reply) => {
     const { orgId } = parse(z.object({ orgId: uuid }), req.params);
     const auth = await authorize(db, req, 'integrations.manage', orgId);
-    const b = parse(z.object({ name: z.string().min(1).max(100) }), req.body);
+    const b = parse(z.object({ name: z.string().min(1).max(100), scopes: z.array(z.enum(['conversions:write', 'rewards:redeem'])).min(1).max(2).default(['conversions:write']) }), req.body);
     const prefix = randomBytes(6).toString('hex');
     const secret = randomBytes(32).toString('base64url');
-    const k = await db.query(`INSERT INTO integration_keys (org_id, name, prefix, key_hash, scopes, created_by) VALUES ($1,$2,$3,$4,ARRAY['conversions:write'],$5) RETURNING id, created_at`,
-      [orgId, b.name, prefix, sha256hex(secret), auth.userId]);
+    const k = await db.query(`INSERT INTO integration_keys (org_id, name, prefix, key_hash, scopes, created_by) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, created_at`,
+      [orgId, b.name, prefix, sha256hex(secret), [...new Set(b.scopes)], auth.userId]);
     await audit(db, actorOf(req), 'integration.key_created', { type: 'integration_key', id: k.rows[0].id, orgId }, { name: b.name, prefix });
     reply.code(201);
-    return { id: k.rows[0].id, key: `rmnk_${prefix}_${secret}`, scopes: ['conversions:write'], note: 'Shown once. Store it in your server-side secret manager.' };
+    return { id: k.rows[0].id, key: `rmnk_${prefix}_${secret}`, scopes: [...new Set(b.scopes)], note: 'Shown once. Store it in your server-side secret manager.' };
   });
 
   app.get('/v1/orgs/:orgId/integration-keys', async (req) => {
@@ -243,6 +244,7 @@ export async function commissionRoutes(app: FastifyInstance, { db, config }: { d
     const dev = await authenticateDevice(db, config, req);
     const b = parse(z.object({ campaignId: uuid, creativeId: uuid, contentVideoId: uuid.optional() }), req.body);
     if (dev.status !== 'ACTIVE') throw forbidden('device is suspended');
+    const rider = await tabletRider(db, req, dev.deviceId);
     const out = await withTx(db, async (tx) => {
       const a = (await tx.query(`SELECT driver_id FROM device_assignments WHERE device_id = $1 AND ends_at IS NULL`, [dev.deviceId])).rows[0];
       if (!a) throw forbidden('device is not assigned to a vehicle');
@@ -259,9 +261,9 @@ export async function commissionRoutes(app: FastifyInstance, { db, config }: { d
       for (let attempt = 0; attempt < 5; attempt++) {
         const code = couponCode(randomBytes(10));
         const r = await tx.query(
-          `INSERT INTO coupon_codes (code, offer_id, campaign_id, device_id, driver_id, creator_id, video_id, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (code) DO NOTHING RETURNING code, expires_at`,
-          [code, offer.id, b.campaignId, dev.deviceId, a.driver_id, video?.creator_id ?? null, video?.id ?? null, expires]);
-        if (r.rows[0]) return { code: r.rows[0].code, expiresAt: r.rows[0].expires_at, description: offer.coupon_description, qrPayload: `RMNCOUPON:${r.rows[0].code}` };
+          `INSERT INTO coupon_codes (code, offer_id, campaign_id, device_id, driver_id, creator_id, video_id, expires_at, rider_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (code) DO NOTHING RETURNING code, expires_at`,
+          [code, offer.id, b.campaignId, dev.deviceId, a.driver_id, video?.creator_id ?? null, video?.id ?? null, expires, rider?.id ?? null]);
+        if (r.rows[0]) return { code: r.rows[0].code, expiresAt: r.rows[0].expires_at, description: offer.coupon_description, qrPayload: `RMNCOUPON:${r.rows[0].code}`, savedToWallet: !!rider };
       }
       throw conflict('could not allocate a unique code; retry');
     });

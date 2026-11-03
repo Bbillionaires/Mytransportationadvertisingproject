@@ -204,7 +204,20 @@ Test totals: finance-core 28, API 127.
 
 Risk R-019 mitigated. Test totals: finance-core 28, API 138.
 
+## 2026-11-03 — Session 11: rider engagement (Phase 5) ✅
+
+| Item | Status | Evidence |
+|---|---|---|
+| Rider accounts (18+, uniform responses, verification, separate identity), wallet, self-service deletion with erasure | ✅ | `riders.test.ts` |
+| QR sign-in: 2-minute single-use code, token delivered to the tablet once, device-bound 30-minute session, ends on drop-off/purge/suspend/new pairing | ✅ | `riders.test.ts` (invariant 11) |
+| Coupons saved to the signed-in rider's wallet | ✅ | `riders.test.ts` |
+| Proximity alerts: eligibility, speed suppression, global gap, cooldown, daily cap, randomized pacing, silent passenger-only 60 s alerts, outcomes, stats; no coordinates stored | ✅ | `proximity.test.ts`, `riders.test.ts` |
+| Skill games: server-measured duration, server-scored trivia, implausibility checks, guest play; chance-based games blocked by DB constraint | ✅ | `riders.test.ts` |
+| Sponsor reward programs, capped grants, single-use POS redemption with scoped key, outstanding obligations | ✅ | `riders.test.ts` |
+| Tablet UI for all of the above | ⬜ | Android app (M2.5) |
+
+Test totals: finance-core 28, API 153.
+
 ### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
-1. Phase 5 rider engagement: rider accounts and QR sign-in, coupons wallet, geofenced alerts, skill games, reward accounting.
-2. M2.5 Android player (needs a real device and D-017).
-3. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).
+1. M2.5 Android player (needs a real device and D-017).
+2. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).

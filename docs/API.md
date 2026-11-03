@@ -174,8 +174,10 @@ See `REPORTING.md`.
 ### Accounts, support access and metrics (session 10)
 See `ACCOUNTS.md`. Self-registration now returns `202 {status: PENDING_VERIFICATION}` (no ids); clients read their organization from `GET /v1/me` after verification.
 
+### Riders, proximity, games and rewards (session 11)
+See `RIDERS.md`. Integration keys now accept `scopes: ['conversions:write' | 'rewards:redeem']`.
+
 ## Planned (Phase 2–6, contracts to be versioned when built)
 - Media: creator playlists/series, object-store adapter, virus scanning.
 - Campaigns: geofences and per-campaign budgets.
 - Payouts: `/v1/finance/payout-batches` (dual approval), provider onboarding links.
-- Riders: QR session handoff, coupons, games.

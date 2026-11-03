@@ -9,6 +9,7 @@ import { badRequest, conflict, notFound, unauthorized } from '../../lib/errors.j
 import { parse, uuid } from '../../lib/validation.js';
 import { actorOf, authorize } from '../../auth/context.js';
 import { loadOrg } from '../orgs/routes.js';
+import { endTabletSessions } from '../riders/routes.js';
 
 /**
  * Verifies an Ed25519-signed device request:
@@ -112,6 +113,7 @@ export async function deviceRoutes(app: FastifyInstance, { db, config }: { db: D
       // Suspension takes effect server-side immediately; the command tells the tablet to stop playback.
       if (b.command === 'SUSPEND') await tx.query(`UPDATE devices SET status = 'SUSPENDED' WHERE id = $1`, [deviceId]);
       if (b.command === 'RESUME') await tx.query(`UPDATE devices SET status = 'ACTIVE' WHERE id = $1`, [deviceId]);
+      if (b.command === 'PURGE_RIDER_DATA' || b.command === 'SUSPEND') await endTabletSessions(tx, deviceId);
       const c = await tx.query('INSERT INTO device_commands (org_id, device_id, command, payload, created_by) VALUES ($1,$2,$3,$4,$5) RETURNING *', [orgId, deviceId, b.command, JSON.stringify(b.payload), auth.userId]);
       await audit(tx, actorOf(req), 'device.command_issued', { type: 'device', id: deviceId, orgId }, { command: b.command, commandId: c.rows[0].id });
       return c.rows[0];

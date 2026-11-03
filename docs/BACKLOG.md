@@ -40,7 +40,7 @@ Each milestone is done only when its criteria pass in CI against PostgreSQL. It 
 - **M4.3 Payout onboarding** (Stripe Connect or chosen provider, D-026), payout batches with dual approval. *AC:* invariant 10 (payout ≤ approved payable; concurrent payouts can't overdraw).
 - ✅ **M4.4 Creator and driver dashboards and statements** (session 9; payouts column fills in with M4.3): gross → deductions → net → allocation → adjustments → pending/approved/paid with drill-down.
 
-## Phase 5 — Rider engagement
+## Phase 5 — Rider engagement ✅ (session 11; see RIDERS.md)
 QR sign-in with short-lived tokens; auto-logout and purge (invariant 11); coupons and redemption; geofence alerts; skill games; reward liability accounting. Chance-based features stay off until legal sign-off.
 
 ## Phase 6 — Scale

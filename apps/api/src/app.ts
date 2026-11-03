@@ -24,6 +24,8 @@ import { reportRoutes } from './modules/reports/routes.js';
 import { accountRoutes } from './modules/identity/accounts.js';
 import { impersonationRoutes } from './modules/identity/impersonation.js';
 import { metricsRoutes } from './modules/ops/metrics.js';
+import { riderRoutes } from './modules/riders/routes.js';
+import { engagementRoutes } from './modules/riders/engagement.js';
 import type { PaymentProvider } from './modules/payments/provider.js';
 import { StripeProvider } from './modules/payments/stripe.js';
 import { FakePaymentProvider } from './modules/payments/fake.js';
@@ -103,6 +105,8 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
   await app.register(paymentRoutes, { db, config, provider });
   await app.register(commissionRoutes, { db, config });
   await app.register(reportRoutes, { db });
+  await app.register(riderRoutes, { db, config });
+  await app.register(engagementRoutes, { db, config });
 
   // The admin shell is a single static page; all data comes from the permission-checked API.
   const adminHtml = await readFile(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/index.html'), 'utf8');
