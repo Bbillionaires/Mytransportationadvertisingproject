@@ -1,6 +1,7 @@
 import { qrSvg } from '../../player/src/qr';
 import { advertiserSections } from './advertiser';
 import { creatorSections } from './creator';
+import { staffSections } from './staff';
 import { TOKEN, ORG, ss, $, el, btn, input, select, chip, toast, render, ago, fmtDate, api, errText, act, closeDialog, dialog, info, setUnauthorizedHandler, type Kid } from './ui';
 
 /**
@@ -141,6 +142,7 @@ export type Section = { id: string; title: string; perm: string; view: (arg?: st
 const SECTIONS: Record<string, Section[]> = {
   ADVERTISER: advertiserSections,
   CREATOR_STUDIO: creatorSections,
+  PLATFORM: staffSections,
   FLEET_OPERATOR: [
     { id: 'overview', title: 'Overview', perm: 'device.read', view: () => fleetOverview() },
     { id: 'tablets', title: 'Tablets', perm: 'device.read', view: () => fleetTablets() },

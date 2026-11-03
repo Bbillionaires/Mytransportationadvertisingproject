@@ -314,9 +314,23 @@ Gap found: there is no staff endpoint or screen to confirm a creator's monetizat
 
 Test totals: finance-core 28, API 162, Android unit tests, browser e2e: tablet ride, rider app, fleet, advertiser and creator portals.
 
+## 2026-11-03 — Session 18: staff portal
+
+| Item | Status | Evidence |
+|---|---|---|
+| Staff overview with queue counts; clear "two-step verification required" state | ✅ | staff browser e2e (real TOTP) |
+| Ad review with signed previews (video/image/banner), per-ad decisions and notes, AI advisory labels | ✅ | e2e loads the preview and checks DB outcomes |
+| Video moderation (reasons required to reject), appeals by a second reviewer | ✅ | e2e |
+| Copyright notices: uphold / withdraw / restore (after counter-notice + waiting period) | ✅ | e2e (uphold) |
+| Earnings eligibility for creators and drivers: new MFA permission and endpoints, audited reasons, no self-decision | ✅ | `platform.test.ts` + e2e |
+| Finance: journal approvals with dual control, revenue rule approvals, trial balance, CSV reports | ✅ | e2e posts an entry approved by a different person |
+| Organizations list and audit log with filter | ✅ | e2e |
+| `/` opens the portal; `/admin/` kept only until the driver section exists | ✅ | |
+
+Test totals: finance-core 28, API 166, Android unit tests, browser e2e: tablet ride, rider app, fleet, advertiser, creator and staff portals.
+
 ### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
-1. Portal: staff section — campaign/creative review queue, video moderation and appeals, takedowns, creator monetization eligibility (new endpoint), driver eligibility, finance approvals; then retire `/admin/`.
-2. Portal: driver section (subscription, earnings, statements, assigned tablet).
-3. Advertiser extras: integration keys UI for conversion reporting, CSV export of results.
-4. Android field test on one tablet with the chosen EMM (D-017); key attestation at enrollment (R-028).
-5. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).
+1. Portal: driver section (subscription checkout, earnings with disclosure, statements, assigned tablet), then retire `/admin/`.
+2. Advertiser extras: integration keys UI for conversion reporting, CSV export of results.
+3. Android field test on one tablet with the chosen EMM (D-017); key attestation at enrollment (R-028).
+4. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).

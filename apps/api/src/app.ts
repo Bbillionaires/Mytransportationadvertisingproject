@@ -30,6 +30,7 @@ import type { PaymentProvider } from './modules/payments/provider.js';
 import { StripeProvider } from './modules/payments/stripe.js';
 import { FakePaymentProvider } from './modules/payments/fake.js';
 import { devCheckoutRoutes } from './modules/payments/devCheckout.js';
+import { platformRoutes } from './modules/platform/routes.js';
 
 /** Postgres error codes raised by our integrity triggers/constraints, surfaced as client errors. */
 const PG_CLIENT_ERRORS: Record<string, [number, string]> = {
@@ -113,6 +114,7 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
   await app.register(reportRoutes, { db });
   await app.register(riderRoutes, { db, config });
   await app.register(engagementRoutes, { db, config });
+  await app.register(platformRoutes, { db });
 
   // The admin shell is a single static page; all data comes from the permission-checked API.
   const adminHtml = await readFile(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/index.html'), 'utf8');
@@ -120,7 +122,7 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
     reply.type('text/html; charset=utf-8').header('content-security-policy', "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-ancestors 'none'").send(adminHtml);
   app.get('/admin', sendAdmin);
   app.get('/admin/', sendAdmin);
-  app.get('/', async (_req, reply) => reply.redirect('/admin/'));
+  app.get('/', async (_req, reply) => reply.redirect('/portal/'));
 
   // Static web apps built by esbuild: fixed file lists, no directory serving, strict CSP on the HTML.
   const mediaOrigin = new URL(config.MEDIA_BASE_URL).origin;
@@ -151,7 +153,7 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
     'camera=(self), geolocation=(), microphone=()');
   // Business portal (apps/portal): fleet operators first, other roles follow.
   webApp('portal', '../../portal/dist', ['index.html', 'portal.js', 'portal.js.map', 'portal.css'],
-    `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: ${mediaOrigin}; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
+    `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: ${mediaOrigin}; media-src ${mediaOrigin}; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
     'camera=(), geolocation=(), microphone=()');
   return app;
 }

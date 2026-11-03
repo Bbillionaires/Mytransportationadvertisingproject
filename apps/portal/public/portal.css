@@ -73,3 +73,14 @@ label.check.attest input { margin-top: 2px; flex: none; }
 .notice { margin: 0; }
 fieldset.kind { border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; }
 fieldset.kind legend { font-size: 13px; color: var(--muted); padding: 0 4px; }
+.creative { display: grid; grid-template-columns: 280px 1fr; gap: 14px; align-items: start; padding: 10px 0; border-top: 1px solid var(--line); }
+.preview { width: 100%; max-width: 280px; border-radius: 8px; background: #000; display: block; }
+.banner-preview { background: #0d1117; color: #fff; border-radius: 8px; padding: 14px; }
+form.review { display: grid; gap: 12px; }
+input.wide { width: 100%; margin-top: 6px; }
+fieldset.reasons { border: 1px solid var(--line); border-radius: 6px; display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 8px 12px; }
+fieldset.reasons legend { font-size: 13px; color: var(--muted); padding: 0 4px; }
+a.stat-link { color: inherit; text-decoration: none; } a.stat-link .stat:hover { border-color: var(--accent); }
+.mono { font-family: ui-monospace, monospace; word-break: break-all; }
+code { font-size: 13px; background: var(--chip); padding: 1px 4px; border-radius: 4px; word-break: break-all; }
+@media (max-width: 700px) { .creative { grid-template-columns: 1fr; } }

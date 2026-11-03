@@ -1,6 +1,6 @@
 # Business portal
 
-`apps/portal` is the web portal for business users at `/portal/`. It is built in stages: **fleet operators** (session 15), **advertisers** (session 16), then **creators** (session 17). Driver and staff sections follow; until then those users see a placeholder, and staff keep using `/admin/`.
+`apps/portal` is the web portal for business users at `/portal/`. It is built in stages: **fleet operators** (session 15), **advertisers** (session 16), **creators** (session 17), then **platform staff** (session 18). The driver section follows; until then those users see a placeholder, and staff keep using `/admin/`.
 
 > Status: tested end to end in a real browser against the real API and database. Not yet used by a real fleet.
 
@@ -50,6 +50,22 @@ Read-only members see results and balances but no management actions and no bill
 | Earnings | Earned (allocated), balance owed, indicative estimate, reversals; by source; allocation lines; monthly ledger statements as PDF or CSV. Disclosure: earnings are not guaranteed. Payouts are not enabled | `creator.read` |
 | Team | Invite co-owners | `org.members.manage` |
 
+## Staff sections (platform organization)
+Every staff permission requires a two-step-verified session. A staff member without it sees a "Two-step verification required" card and a link to set it up.
+
+| Section | What it does | Permission |
+|---|---|---|
+| Overview | Counts for each queue the role can work (ads, videos, appeals, copyright notices, eligibility, journal requests, rules), linking to the queue | per queue |
+| Ad review | Each submitted campaign with its terms, markets and landing page. Each ad is shown as riders will see it (video player or image through a signed 30-minute link, or banner text), with the AI pre-screen marked as advisory. Approve or reject each ad (with a note), then approve or reject the campaign. New ads on running campaigns are decided one by one | `campaign.review` |
+| Video moderation | Video player, title, description and channel; AI pre-screen marked advisory; approve, or reject with at least one policy reason and a note. Appeals show the creator's statement and the original reasons, and are overturned or upheld (by a different reviewer — enforced by the API) | `content.review` |
+| Copyright notices | Claim, claimant, counter-notice and the creator's open-notice count. Uphold, withdraw, or restore (only after a counter-notice and the 10-business-day wait) | `takedown.manage` |
+| Earnings eligibility | Creators (videos live, open notices) and drivers (fleet, subscription status). Set eligible, pending, suspended or terminated, with a reason that is audited. Staff cannot decide for their own organization | `platform.eligibility.manage` (new; super admin) |
+| Finance | Journal requests awaiting approval (approver role only; the requester can never approve their own), revenue rules awaiting their two approvals, a trial balance check, and CSV reports | `finance.read` / `finance.journal.approve` / `finance.rules.approve` |
+| Organizations | Every organization, with type, status and creation date | platform membership |
+| Audit log | The latest 200 entries, filterable by action | `platform.audit.read` |
+
+The site root `/` now opens the portal. The old `/admin/` console is kept until the driver section is built, because drivers still use it to see their earnings.
+
 ## Security notes
 - Strict CSP: scripts and styles from the same origin only, no inline script, no framing.
 - All server text is rendered with `textContent`. There is no HTML injection path.
@@ -78,6 +94,16 @@ Read-only members see results and balances but no management actions and no bill
 - shows "Earning" once eligibility is set
 
 Not covered by this test: earnings with allocation lines. They are covered by `reports.test.ts`, because producing them in a browser test needs the whole delivery and allocation pipeline. Monetization eligibility is set directly in the test because there is no staff screen or endpoint for it yet.
+
+## Testing (staff)
+`apps/portal/e2e/staff.e2e.ts`: every staff member signs in with real TOTP codes. It checks that:
+- a moderator without two-step verification is blocked until they set it up
+- the reviewer can load the signed ad video preview; they approve the video ad, reject the banner with a note, and approve the campaign
+- one video is approved; a rejection without a policy reason is refused; another video is then rejected with a reason
+- an appeal on a different reviewer's rejection is overturned
+- a copyright notice is upheld
+- a super admin marks a creator and a driver eligible with reasons, and the audit log shows it
+- the finance admin who requested a journal entry sees no approve button; a separate approver posts it, the trial balance stays balanced, and the advertiser is credited
 
 ## Testing (fleet)
 `npm run e2e -w @rmn/portal` does the following in Chromium:

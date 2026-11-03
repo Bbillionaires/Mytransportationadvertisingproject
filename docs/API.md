@@ -203,3 +203,13 @@ Framework client errors (unsupported media type, payload too large, malformed bo
 ## Session 17 changes
 - `GET /v1/orgs/:orgId/videos` items also include `thumbnailUrl` (signed, 30 min) and `appeal` (`{id, status, createdAt, decidedAt}` or null).
 - `GET /v1/orgs/:orgId/videos/performance`: `monetizedRevenue` is always whole minor units (it was a decimal string).
+
+## Session 18 additions (platform staff)
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/platform/creators?status=` | `platform.eligibility.manage` (MFA); channels with org, live/total videos, open notices |
+| POST | `/v1/platform/creators/:id/monetization` | `{status: PENDING\|ELIGIBLE\|SUSPENDED\|TERMINATED, reason}`; audited; 409 for your own organization |
+| GET | `/v1/platform/drivers?status=` | drivers with fleet operator, fleet and latest subscription status |
+| POST | `/v1/platform/drivers/:id/eligibility` | same body and rules as above |
+
+`GET /v1/review/campaigns` creatives include `previewUrl` (signed, 30 minutes). `GET /` redirects to `/portal/`.
