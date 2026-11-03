@@ -28,7 +28,7 @@ npm run dev                                         # http://127.0.0.1:8080/admi
 ## Tests
 ```bash
 npm run typecheck
-npm test            # 28 finance-core tests (incl. property tests) + 127 API tests (media tests need ffmpeg)
+npm test            # 28 finance-core tests (incl. property tests) + 138 API tests (media tests need ffmpeg)
 ```
 The API tests reset the schema of `TEST_DATABASE_URL` (default `postgres://rmn:rmn@localhost:5432/rmn_test`).
 

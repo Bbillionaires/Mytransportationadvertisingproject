@@ -1,0 +1,14 @@
+# Account Lifecycle, Support Access and Operations (Phase 1 remainder)
+
+| Capability | Endpoint(s) | Rules |
+|---|---|---|
+| Self-registration (advertiser, creator) | `POST /v1/advertisers/register`, `POST /v1/creators/register` | Always `202 PENDING_VERIFICATION`, whether or not the email exists (no account enumeration); an existing owner gets a "someone tried to register" email instead. Passwords ≥ 12 characters, common passwords refused. |
+| Email verification | `POST /v1/auth/verify-email {token}`, `POST /v1/auth/verify-email/resend` | Single-use, 48 h, stored hashed; resend retires older links. Until verified, permissions flagged `requires_verified_email` (campaign.manage, billing.manage, creator.manage, media.upload, integrations.manage, org.members.manage, driver.subscription.manage) return `EMAIL_NOT_VERIFIED`; reading is allowed. |
+| Password reset | `POST /v1/auth/password-reset/request {email}` → always 202; `POST /v1/auth/password-reset/confirm {token, newPassword}` | 30-minute single-use link; success unlocks a LOCKED account, signs out every session, keeps MFA, and emails a "password changed" notice. |
+| Invitations | `POST/GET /v1/orgs/:orgId/invitations`, `POST …/:id/revoke`, `POST /v1/auth/accept-invitation {token, password?}` | 7-day single-use links; role must match the organization kind; platform roles need `platform.users.manage`. Accepting creates a verified account, or attaches the role to the existing account with that email. |
+| Support account actions | `POST /v1/users/:id/{unlock,disable,enable,mfa-reset} {reason}` | `platform.users.manage` (MFA), reason required, never on yourself, audited; disable and MFA reset revoke sessions; MFA reset emails the user. |
+| Support impersonation | `POST /v1/support/impersonations {targetUserId, reason, ticketRef, minutes≤30}`, `POST …/:id/end`, `GET /v1/support/impersonations` | `support.impersonate` (MFA). Platform staff cannot be impersonated; the session cannot use MFA-gated permissions; every audit entry records both identities; the user is emailed. |
+| Transactional email | outbox table + `npm run jobs:send-email -w @rmn/api` | Enqueued inside the business transaction; bodies (which may hold one-time links) are purged once sent. Dev sender logs only; production provider is D-044. |
+| Metrics | `GET /metrics` with `Authorization: Bearer $METRICS_TOKEN` | Prometheus format: request counters and latency histograms per route template, plus gauges for tablets online, events pending/held, moderation backlog, failed webhooks, reconciliation exceptions, email backlog, pending approvals, and `rmn_ledger_unbalanced_currencies` (alert if > 0). Disabled when the token is unset. |
+
+The console handles `?verify=`, `?reset=` and `?invite=` links and has a "Forgot password?" flow (browser-checked).

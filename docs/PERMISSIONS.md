@@ -36,6 +36,8 @@ The source of truth is the `role_permissions` table (migration 0001); this table
 | integrations.manage | | ✔ | | | | | | | ✔ own | |
 | events.review | ✔ | ✔ | | ✔ | | | | | | |
 
+**Verified email:** permissions marked `requires_verified_email` (campaign.manage, billing.manage, creator.manage, media.upload, integrations.manage, org.members.manage, driver.subscription.manage) are refused with `EMAIL_NOT_VERIFIED` until the user confirms their address.
+
 ¹ Separation of duties applies to everyone, super admins included: nobody can approve their own journal request, rules need two approvers who are not the drafter, and DB `CHECK` constraints back this up.
 
 **Scoping rules** (`auth/context.ts#authorize`):

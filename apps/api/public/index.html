@@ -25,6 +25,9 @@
   <section class="card" id="login">
     <h2>Sign in</h2>
     <form id="lf"><input id="email" type="email" placeholder="email" required autocomplete="username"> <input id="pw" type="password" placeholder="password" required autocomplete="current-password"> <button>Sign in</button></form>
+    <p><a href="#" id="forgot">Forgot password?</a></p>
+    <form id="ff" hidden><p>Enter your email and we'll send a reset link.</p><input id="femail" type="email" required placeholder="email"> <button>Send link</button></form>
+    <form id="rf" hidden><p id="rtitle">Choose a new password (at least 12 characters).</p><input id="rpw" type="password" required minlength="12" autocomplete="new-password" placeholder="new password"> <button id="rbtn">Save</button></form>
     <form id="mf" hidden><p>Enter your authenticator code to unlock finance and platform actions.</p><input id="code" inputmode="numeric" pattern="\d{6}" placeholder="123456"> <button>Verify</button></form>
     <p id="lmsg" class="err"></p>
   </section>
@@ -145,6 +148,26 @@ $('#view').onclick = async (e) => {
   } catch (err) { alert(err.message); }
 };
 $('#logout').onclick = async () => { await api('/v1/auth/logout', { method: 'POST', body: '{}' }).catch(() => {}); sessionStorage.removeItem('rmn_token'); location.reload(); };
+// One-time links from email: ?verify=…, ?reset=…, ?invite=…
+const params = new URLSearchParams(location.search);
+const clearLink = () => history.replaceState(null, '', location.pathname);
+const msg = (t, ok) => { $('#lmsg').textContent = t; $('#lmsg').className = ok ? 'ok' : 'err'; };
+$('#forgot').onclick = (e) => { e.preventDefault(); $('#ff').hidden = false; };
+$('#ff').onsubmit = async (e) => { e.preventDefault();
+  try { const r = await api('/v1/auth/password-reset/request', { method: 'POST', body: JSON.stringify({ email: $('#femail').value }) }); msg(r.message, true); $('#ff').hidden = true; } catch (err) { msg(err.message); } };
+if (params.get('verify')) {
+  api('/v1/auth/verify-email', { method: 'POST', body: JSON.stringify({ token: params.get('verify') }) })
+    .then(() => msg('Email confirmed. You can sign in.', true)).catch((err) => msg(err.message)).finally(clearLink);
+}
+for (const [param, path, title, field] of [['reset', '/v1/auth/password-reset/confirm', 'Choose a new password (at least 12 characters).', 'newPassword'], ['invite', '/v1/auth/accept-invitation', 'Accept your invitation: choose a password (at least 12 characters). Leave it empty if you already have an account.', 'password']]) {
+  const t = params.get(param);
+  if (!t) continue;
+  $('#lf').hidden = true; $('#rf').hidden = false; $('#rtitle').textContent = title;
+  if (param === 'invite') $('#rpw').required = false;
+  $('#rf').onsubmit = async (e) => { e.preventDefault();
+    const body = { token: t }; if ($('#rpw').value) body[field] = $('#rpw').value;
+    try { await api(path, { method: 'POST', body: JSON.stringify(body) }); clearLink(); $('#rf').hidden = true; $('#lf').hidden = false; msg('Done. Sign in with your password.', true); } catch (err) { msg(err.message); } };
+}
 if (token) api('/v1/me').then(signedIn).catch(() => sessionStorage.removeItem('rmn_token'));
 </script>
 </body>

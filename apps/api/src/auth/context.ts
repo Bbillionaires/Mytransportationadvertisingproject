@@ -16,6 +16,7 @@ export interface AuthContext {
   sessionId: string;
   mfaVerified: boolean;
   mfaEnabled: boolean;
+  emailVerified: boolean;
   impersonatorUserId: string | null;
   memberships: Membership[];
 }
@@ -27,13 +28,13 @@ declare module 'fastify' {
   }
 }
 
-let mfaPermissions: Set<string> | null = null;
-async function loadMfaPermissions(db: Db): Promise<Set<string>> {
-  if (!mfaPermissions) {
-    const r = await db.query<{ code: string }>('SELECT code FROM permissions WHERE requires_mfa');
-    mfaPermissions = new Set(r.rows.map((x) => x.code));
+let permFlags: { mfa: Set<string>; verified: Set<string> } | null = null;
+async function loadPermissionFlags(db: Db) {
+  if (!permFlags) {
+    const r = await db.query<{ code: string; requires_mfa: boolean; requires_verified_email: boolean }>('SELECT code, requires_mfa, requires_verified_email FROM permissions');
+    permFlags = { mfa: new Set(r.rows.filter((x) => x.requires_mfa).map((x) => x.code)), verified: new Set(r.rows.filter((x) => x.requires_verified_email).map((x) => x.code)) };
   }
-  return mfaPermissions;
+  return permFlags;
 }
 
 export async function resolveSession(db: Db, req: FastifyRequest): Promise<AuthContext | undefined> {
@@ -42,7 +43,7 @@ export async function resolveSession(db: Db, req: FastifyRequest): Promise<AuthC
   const token = h.slice(7).trim();
   if (!token) return undefined;
   const s = await db.query(
-    `SELECT s.id, s.user_id, s.mfa_verified_at, s.impersonator_user_id, u.mfa_enabled
+    `SELECT s.id, s.user_id, s.mfa_verified_at, s.impersonator_user_id, u.mfa_enabled, u.email_verified_at
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = $1 AND s.revoked_at IS NULL AND s.expires_at > now() AND u.status = 'ACTIVE'`,
     [sha256hex(token)],
@@ -62,6 +63,7 @@ export async function resolveSession(db: Db, req: FastifyRequest): Promise<AuthC
     sessionId: row.id,
     mfaVerified: row.mfa_verified_at !== null,
     mfaEnabled: row.mfa_enabled,
+    emailVerified: row.email_verified_at !== null,
     impersonatorUserId: row.impersonator_user_id,
     memberships: m.rows.map((r) => ({ orgId: r.org_id, orgKind: r.kind, role: r.role_code, permissions: new Set(r.perms as string[]) })),
   };
@@ -86,12 +88,13 @@ export function actorOf(req: FastifyRequest): AuditActor {
  */
 export async function authorize(db: Db, req: FastifyRequest, permission: string, orgId?: string): Promise<AuthContext> {
   const auth = requireAuth(req);
-  const mfa = await loadMfaPermissions(db);
+  const flags = await loadPermissionFlags(db);
   const grants = auth.memberships.filter(
     (m) => m.permissions.has(permission) && (m.orgKind === 'PLATFORM' || (orgId !== undefined && m.orgId === orgId)),
   );
   if (grants.length === 0) throw forbidden(`missing permission ${permission}${orgId ? ' for this organization' : ''}`);
-  if (mfa.has(permission)) {
+  if (flags.verified.has(permission) && !auth.emailVerified) throw forbidden('verify your email address to use this feature', 'EMAIL_NOT_VERIFIED');
+  if (flags.mfa.has(permission)) {
     if (auth.impersonatorUserId) throw forbidden('privileged actions are not available while impersonating', 'IMPERSONATION_RESTRICTED');
     if (!auth.mfaEnabled || !auth.mfaVerified) throw forbidden('this action requires a multi-factor authenticated session', 'MFA_REQUIRED');
   }

@@ -21,6 +21,9 @@ import { mediaRoutes } from './modules/media/routes.js';
 import { paymentRoutes } from './modules/payments/routes.js';
 import { commissionRoutes } from './modules/commissions/routes.js';
 import { reportRoutes } from './modules/reports/routes.js';
+import { accountRoutes } from './modules/identity/accounts.js';
+import { impersonationRoutes } from './modules/identity/impersonation.js';
+import { metricsRoutes } from './modules/ops/metrics.js';
 import type { PaymentProvider } from './modules/payments/provider.js';
 import { StripeProvider } from './modules/payments/stripe.js';
 import { FakePaymentProvider } from './modules/payments/fake.js';
@@ -83,7 +86,10 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
     try { await db.query('SELECT 1'); return { ok: true }; } catch { return reply.code(503).send({ ok: false }); }
   });
 
+  await metricsRoutes(app, { db, config }); // root-level hooks so every route is measured
   await app.register(identityRoutes, { db, config });
+  await app.register(accountRoutes, { db, config });
+  await app.register(impersonationRoutes, { db });
   await app.register(orgRoutes, { db });
   await app.register(fleetRoutes, { db });
   await app.register(deviceRoutes, { db, config });
@@ -91,7 +97,7 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
   await app.register(revenueRoutes, { db });
   await app.register(eventIngestRoutes, { db, config });
   await app.register(eventRoutes, { db, config });
-  await app.register(campaignRoutes, { db });
+  await app.register(campaignRoutes, { db, config });
   await app.register(playlistRoutes, { db, config });
   await app.register(mediaRoutes, { db, config });
   await app.register(paymentRoutes, { db, config, provider });

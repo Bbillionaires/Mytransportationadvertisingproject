@@ -6,6 +6,7 @@ import type { Db, Queryable } from '../../db/pool.js';
 import { withTx } from '../../db/pool.js';
 import { audit } from '../../lib/audit.js';
 import { hashPassword } from '../../lib/crypto.js';
+import { issueUserToken, notifyExistingAccount, passwordSchema, REGISTRATION_ACCEPTED } from '../identity/accounts.js';
 import { badRequest, conflict, forbidden, notFound, unprocessable } from '../../lib/errors.js';
 import { signMediaUrl, verifyMediaSignature } from '../../lib/media.js';
 import { parse, uuid } from '../../lib/validation.js';
@@ -143,18 +144,20 @@ export async function mediaRoutes(app: FastifyInstance, { db, config }: { db: Db
 
   // ---------------- creators ----------------
   app.post('/v1/creators/register', { config: { rateLimit: { max: 3, timeWindow: '1 minute' } } }, async (req, reply) => {
-    const b = parse(z.object({ channelName: z.string().min(2).max(100), email: z.string().email(), displayName: z.string().min(1).max(200), password: z.string().min(12).max(200) }), req.body);
+    const b = parse(z.object({ channelName: z.string().min(2).max(100), email: z.string().email(), displayName: z.string().min(1).max(200), password: passwordSchema }), req.body);
     const out = await withTx(db, async (tx) => {
-      if ((await tx.query('SELECT 1 FROM users WHERE email = $1', [b.email])).rows[0]) throw conflict('registration could not be completed with this email');
+      if ((await tx.query('SELECT 1 FROM users WHERE email = $1', [b.email])).rows[0]) { await notifyExistingAccount(tx, config, b.email); return null; }
       const org = await tx.query(`INSERT INTO organizations (kind, name) VALUES ('CREATOR_STUDIO', $1) RETURNING id`, [b.channelName]);
-      const u = await tx.query('INSERT INTO users (email, password_hash, display_name) VALUES ($1,$2,$3) RETURNING id', [b.email, await hashPassword(b.password), b.displayName]);
+      const u = await tx.query('INSERT INTO users (email, password_hash, display_name, email_verified_at) VALUES ($1,$2,$3,NULL) RETURNING id', [b.email, await hashPassword(b.password), b.displayName]);
       await tx.query(`INSERT INTO memberships (user_id, org_id, role_code) VALUES ($1,$2,'creator_owner')`, [u.rows[0].id, org.rows[0].id]);
+      await issueUserToken(tx, config, u.rows[0].id, b.email, 'EMAIL_VERIFY');
       const ch = await tx.query(`INSERT INTO creator_profiles (org_id, display_name) VALUES ($1,$2) RETURNING id`, [org.rows[0].id, b.channelName]);
       await audit(tx, { userId: u.rows[0].id, requestId: req.id }, 'creator.self_registered', { type: 'organization', id: org.rows[0].id, orgId: org.rows[0].id });
       return { organizationId: org.rows[0].id, channelId: ch.rows[0].id, userId: u.rows[0].id };
     });
-    reply.code(201);
-    return { ...out, note: 'Videos are reviewed by a person before they can appear on tablets. Monetization requires separate eligibility approval.' };
+    void out;
+    reply.code(202);
+    return { ...REGISTRATION_ACCEPTED, note: 'Videos are reviewed by a person before they can appear on tablets. Monetization requires separate eligibility approval.' };
   });
 
   app.get('/v1/orgs/:orgId/channels', async (req) => {

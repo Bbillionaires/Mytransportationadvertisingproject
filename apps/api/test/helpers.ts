@@ -13,8 +13,8 @@ export interface Ctx { app: FastifyInstance; db: Db; config: Config }
 
 let pwHash: string | undefined;
 
-export async function setupApp(opts: { paymentProvider?: import('../src/modules/payments/provider.js').PaymentProvider } = {}): Promise<Ctx> {
-  const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: TEST_DB, APP_ENCRYPTION_KEY: randomBytes(32).toString('base64'), LOG_LEVEL: 'silent', ALLOCATION_SETTLE_MINUTES: '0', ALLOCATION_WINDOW_MINUTES: '1', MEDIA_SIGNING_KEY: randomBytes(32).toString('base64'), MEDIA_BASE_URL: 'https://cdn.example.test', MEDIA_ROOT: `${tmpdir()}/rmn-test-media`, STRIPE_WEBHOOK_SECRET: 'whsec_testsecret123' });
+export async function setupApp(opts: { paymentProvider?: import('../src/modules/payments/provider.js').PaymentProvider; env?: Record<string, string> } = {}): Promise<Ctx> {
+  const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: TEST_DB, APP_ENCRYPTION_KEY: randomBytes(32).toString('base64'), LOG_LEVEL: 'silent', ALLOCATION_SETTLE_MINUTES: '0', ALLOCATION_WINDOW_MINUTES: '1', MEDIA_SIGNING_KEY: randomBytes(32).toString('base64'), MEDIA_BASE_URL: 'https://cdn.example.test', MEDIA_ROOT: `${tmpdir()}/rmn-test-media`, STRIPE_WEBHOOK_SECRET: 'whsec_testsecret123', ...opts.env });
   const db = createPool(config.DATABASE_URL);
   const app = await buildApp({ config, db, logger: false, paymentProvider: opts.paymentProvider });
   return { app, db, config };
@@ -51,6 +51,27 @@ export async function userWithRole(ctx: Ctx, orgId: string, role: string, opts: 
 
 export async function ensureOpenPeriod(db: Db, start = '2026-01-01', end = '2026-12-31') {
   await db.query(`INSERT INTO accounting_periods (period_start, period_end) SELECT $1::date, $2::date WHERE NOT EXISTS (SELECT 1 FROM accounting_periods WHERE daterange(period_start, period_end, '[]') && daterange($1::date, $2::date, '[]'))`, [start, end]);
+}
+
+/** Read the newest one-time link of a template from the email outbox, as the recipient would. */
+export async function linkToken(db: Db, email: string, template: string, param: string): Promise<string> {
+  const r = await db.query(`SELECT body_text FROM email_outbox WHERE to_email = $1 AND template = $2 ORDER BY id DESC LIMIT 1`, [email, template]);
+  const m = new RegExp(`[?&]${param}=([^\\s&]+)`).exec(r.rows[0]?.body_text ?? '');
+  if (!m) throw new Error(`no ${template} email for ${email}`);
+  return decodeURIComponent(m[1]!);
+}
+
+/** Self-registration path: register (202), verify via the emailed link, sign in. Returns the new tenant and auth header. */
+export async function registerVerified(ctx: Ctx, path: '/v1/advertisers/register' | '/v1/creators/register', body: Record<string, string>) {
+  const r = await ctx.app.inject({ method: 'POST', url: path, payload: body });
+  if (r.statusCode !== 202) throw new Error(`registration failed ${r.statusCode} ${r.body}`);
+  const token = await linkToken(ctx.db, body.email!, 'verify_email', 'verify');
+  const v = await ctx.app.inject({ method: 'POST', url: '/v1/auth/verify-email', payload: { token } });
+  if (v.statusCode !== 200) throw new Error('verification failed ' + v.body);
+  const login = await ctx.app.inject({ method: 'POST', url: '/v1/auth/login', payload: { email: body.email, password: body.password } });
+  const h = { authorization: `Bearer ${login.json().token}` };
+  const me = (await ctx.app.inject({ method: 'GET', url: '/v1/me', headers: h })).json();
+  return { h, userId: me.user.id as string, orgId: me.memberships[0].orgId as string };
 }
 
 /** Test fixture: a fully processed media asset (bypasses ffmpeg; the real pipeline is covered in media.test.ts). */

@@ -30,6 +30,8 @@ const schema = z.object({
   /** Stripe Price for the $30/month driver participation subscription. */
   STRIPE_DRIVER_PRICE_ID: z.string().default('price_driver_participation_test'),
   APP_PUBLIC_URL: z.string().url().default('http://127.0.0.1:8080'),
+  /** Bearer token for GET /metrics (Prometheus). Unset = endpoint disabled. */
+  METRICS_TOKEN: z.string().min(24).optional(),
   /** Live money movement is hard-disabled until explicitly approved (see DECISIONS.md D-010). */
   LIVE_PAYMENTS_ENABLED: z.enum(['false']).default('false'),
 });

@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { withTx } from '../src/db/pool.js';
 import { verifyMediaSignature } from '../src/lib/media.js';
 import { postEntry } from '../src/modules/ledger/service.js';
-import { ensureOpenPeriod, FakeTablet, org, platformOrg, readyAsset, setupApp, uid, userWithRole, type Ctx } from './helpers.js';
+import { ensureOpenPeriod, FakeTablet, org, platformOrg, readyAsset, registerVerified, setupApp, uid, userWithRole, type Ctx } from './helpers.js';
 
 let ctx: Ctx;
 let moderator: Awaited<ReturnType<typeof userWithRole>>;
@@ -23,10 +23,8 @@ const videoCreative = async (key: 'a' | 'b') => ({ name: '30s spot', kind: 'VIDE
 
 async function register(key: 'a' | 'b') {
   const email = `adv-${key}-${uid()}@example.test`;
-  const r = await api('POST', '/v1/advertisers/register', {}, { organizationName: `Advertiser ${key.toUpperCase()}`, email, displayName: 'Owner', password: 'a-long-password-123' });
-  expect(r.statusCode).toBe(201);
-  const login = await api('POST', '/v1/auth/login', {}, { email, password: 'a-long-password-123' });
-  adv[key] = { orgId: r.json().organizationId, userId: r.json().userId, h: { authorization: `Bearer ${login.json().token}` }, email };
+  const r = await registerVerified(ctx, '/v1/advertisers/register', { organizationName: `Advertiser ${key.toUpperCase()}`, email, displayName: 'Owner', password: 'a-long-password-123' });
+  adv[key] = { ...r, email };
 }
 
 /** Full happy path through the API: draft -> creative -> submit -> moderator approval. */
@@ -66,8 +64,10 @@ afterAll(async () => { await ctx.app.close(); await ctx.db.end(); });
 
 describe('advertiser self-service', () => {
   it('registration creates an isolated advertiser tenant', async () => {
+    // Same response for an existing email (no account enumeration); the owner is notified instead.
     const dup = await api('POST', '/v1/advertisers/register', {}, { organizationName: 'Dup', email: adv.a.email, displayName: 'x', password: 'a-long-password-123' });
-    expect(dup.statusCode).toBe(409);
+    expect(dup.statusCode).toBe(202);
+    expect((await ctx.db.query(`SELECT 1 FROM email_outbox WHERE to_email = $1 AND template = 'registration_existing'`, [adv.a.email])).rows).toHaveLength(1);
     expect((await api('GET', `/v1/orgs/${adv.a.orgId}/campaigns`, adv.a.h)).statusCode).toBe(200);
     expect((await api('GET', `/v1/orgs/${adv.b.orgId}/campaigns`, adv.a.h)).statusCode).toBe(403);
     expect((await api('GET', '/v1/review/campaigns', adv.a.h)).statusCode).toBe(403);

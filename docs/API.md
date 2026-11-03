@@ -171,6 +171,9 @@ See `COMMISSIONS.md` for the full table: commission offers, integration API keys
 ### Earnings, statements and reports (session 9)
 See `REPORTING.md`.
 
+### Accounts, support access and metrics (session 10)
+See `ACCOUNTS.md`. Self-registration now returns `202 {status: PENDING_VERIFICATION}` (no ids); clients read their organization from `GET /v1/me` after verification.
+
 ## Planned (Phase 2–6, contracts to be versioned when built)
 - Media: creator playlists/series, object-store adapter, virus scanning.
 - Campaigns: geofences and per-campaign budgets.

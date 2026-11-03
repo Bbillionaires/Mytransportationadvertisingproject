@@ -11,9 +11,9 @@ Each milestone is done only when its criteria pass in CI against PostgreSQL. It 
 - [x] **M1.3 Audit.** *AC:* hash chain links; UPDATE/DELETE/TRUNCATE refused.
 - [x] **M1.4 Fleet and device registry.** *AC:* single-use enrollment; signed heartbeat; replay, tampering, foreign key and skew rejected; suspend stops playback; one active assignment per device/vehicle.
 - [x] **M1.5 CI.** Typecheck, tests with a Postgres service, dependency audit.
-- [ ] **M1.6 Account lifecycle.** Invitations, password reset (time-boxed tokens), admin unlock. *AC:* tokens single-use and expire; all audited.
-- [ ] **M1.7 Support impersonation.** Start (reason, ticket, ≤ 30 min), banner, stop. *AC:* every action audited with both identities; finance perms impossible.
-- [ ] **M1.8 Observability.** Prometheus metrics, OpenTelemetry traces, alert rules (heartbeat gaps, 5xx, unbalanced trial balance, failed webhooks).
+- [x] **M1.6 Account lifecycle** (session 10). Invitations, password reset (time-boxed tokens), admin unlock. *AC:* tokens single-use and expire; all audited.
+- [x] **M1.7 Support impersonation** (session 10). Start (reason, ticket, ≤ 30 min), banner, stop. *AC:* every action audited with both identities; finance perms impossible.
+- [x] **M1.8 Observability** (session 10: Prometheus metrics; OpenTelemetry tracing remains). Prometheus metrics, OpenTelemetry traces, alert rules (heartbeat gaps, 5xx, unbalanced trial balance, failed webhooks).
 - [ ] **M1.9 Admin console write actions** for orgs, members, fleets, devices, commands.
 - [ ] **M1.10 Purge jobs** for device nonces and heartbeats per retention policy.
 

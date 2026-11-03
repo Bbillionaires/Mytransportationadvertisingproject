@@ -4,6 +4,7 @@ import type { Db, Queryable } from '../../db/pool.js';
 import { withTx } from '../../db/pool.js';
 import { audit } from '../../lib/audit.js';
 import { hashPassword } from '../../lib/crypto.js';
+import { issueUserToken, notifyExistingAccount, passwordSchema, REGISTRATION_ACCEPTED } from '../identity/accounts.js';
 import { conflict, notFound, unprocessable } from '../../lib/errors.js';
 import { currency, minor, parse, uuid } from '../../lib/validation.js';
 import { actorOf, authorize } from '../../auth/context.js';
@@ -88,21 +89,23 @@ async function ownedCampaign(q: Queryable, orgId: string, id: string, lock = fal
   return r.rows[0];
 }
 
-export async function campaignRoutes(app: FastifyInstance, { db }: { db: Db }) {
+export async function campaignRoutes(app: FastifyInstance, { db, config }: { db: Db; config: import('../../config.js').Config }) {
   // ---------- advertiser self-registration ----------
   app.post('/v1/advertisers/register', { config: { rateLimit: { max: 3, timeWindow: '1 minute' } } }, async (req, reply) => {
-    const b = parse(z.object({ organizationName: z.string().min(2).max(200), email: z.string().email(), displayName: z.string().min(1).max(200), password: z.string().min(12).max(200) }), req.body);
+    const b = parse(z.object({ organizationName: z.string().min(2).max(200), email: z.string().email(), displayName: z.string().min(1).max(200), password: passwordSchema }), req.body);
     const out = await withTx(db, async (tx) => {
       const exists = await tx.query('SELECT 1 FROM users WHERE email = $1', [b.email]);
-      if (exists.rows[0]) throw conflict('registration could not be completed with this email');
+      if (exists.rows[0]) { await notifyExistingAccount(tx, config, b.email); return null; }
       const org = await tx.query(`INSERT INTO organizations (kind, name) VALUES ('ADVERTISER', $1) RETURNING id`, [b.organizationName]);
-      const u = await tx.query('INSERT INTO users (email, password_hash, display_name) VALUES ($1,$2,$3) RETURNING id', [b.email, await hashPassword(b.password), b.displayName]);
+      const u = await tx.query('INSERT INTO users (email, password_hash, display_name, email_verified_at) VALUES ($1,$2,$3,NULL) RETURNING id', [b.email, await hashPassword(b.password), b.displayName]);
       await tx.query(`INSERT INTO memberships (user_id, org_id, role_code) VALUES ($1,$2,'advertiser_admin')`, [u.rows[0].id, org.rows[0].id]);
+      await issueUserToken(tx, config, u.rows[0].id, b.email, 'EMAIL_VERIFY');
       await audit(tx, { userId: u.rows[0].id, requestId: req.id }, 'advertiser.self_registered', { type: 'organization', id: org.rows[0].id, orgId: org.rows[0].id }, { name: b.organizationName });
       return { organizationId: org.rows[0].id, userId: u.rows[0].id };
     });
-    reply.code(201);
-    return { ...out, note: 'Campaigns require platform review before they can run. Fund your prepaid balance to start delivery.' };
+    void out;
+    reply.code(202);
+    return { ...REGISTRATION_ACCEPTED, note: 'Campaigns require platform review before they can run. Fund your prepaid balance to start delivery.' };
   });
 
   // ---------- advertiser campaigns ----------

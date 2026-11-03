@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { processPendingUploads } from '../src/modules/media/process.js';
 import type { ModerationProvider } from '../src/modules/media/moderation.js';
 import { addBusinessDays } from '../src/modules/media/routes.js';
-import { org, platformOrg, setupApp, userWithRole, type Ctx } from './helpers.js';
+import { org, platformOrg, registerVerified, setupApp, userWithRole, type Ctx } from './helpers.js';
 
 let ctx: Ctx;
 const dir = mkdtempSync(path.join(tmpdir(), 'rmn-media-fixtures-'));
@@ -50,11 +50,9 @@ beforeAll(async () => {
   writeFileSync(path.join(dir, 'fake.mp4'), 'this is not really a video file at all');
   for (const f of ['ok.mp4', 'short.mp4', 'banner.png', 'fake.mp4']) files[f] = readFileSync(path.join(dir, f));
 
-  const reg = await api('POST', '/v1/creators/register', {}, { channelName: 'City Walks', email: `creator-${Date.now()}@example.test`, displayName: 'Walker', password: 'a-long-password-123' });
-  expect(reg.statusCode).toBe(201);
-  const email = (await ctx.db.query('SELECT email FROM users WHERE id = $1', [reg.json().userId])).rows[0].email;
-  const tok = (await api('POST', '/v1/auth/login', {}, { email, password: 'a-long-password-123' })).json().token;
-  creator = { orgId: reg.json().organizationId, channelId: reg.json().channelId, h: { authorization: `Bearer ${tok}` } };
+  const reg = await registerVerified(ctx, '/v1/creators/register', { channelName: 'City Walks', email: `creator-${Date.now()}@example.test`, displayName: 'Walker', password: 'a-long-password-123' });
+  const channelId = (await api('GET', `/v1/orgs/${reg.orgId}/channels`, reg.h)).json().items[0].id;
+  creator = { orgId: reg.orgId, channelId, h: reg.h };
   const p = await platformOrg(ctx.db);
   mod1 = await userWithRole(ctx, p, 'moderator', { mfa: true });
   mod2 = await userWithRole(ctx, p, 'moderator', { mfa: true });

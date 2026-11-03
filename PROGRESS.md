@@ -187,8 +187,24 @@ Test totals: finance-core 28, API 118.
 
 Test totals: finance-core 28, API 127.
 
+## 2026-11-03 — Session 10: account lifecycle, support access and metrics (Phase 1 remainder) ✅
+
+| Item | Status | Evidence |
+|---|---|---|
+| Email verification for self-registered accounts; verified-email gate on paid/publishing permissions | ✅ | `accounts.test.ts` |
+| Uniform registration response (no enumeration); existing owner notified; password strength checks | ✅ | `accounts.test.ts`, `campaigns.test.ts` |
+| Password reset (no enumeration, single-use, unlocks, revokes sessions, change notice) | ✅ | `accounts.test.ts`, browser-checked |
+| Invitations (single-use, 7 days, revocable, role/org-kind checks, existing-account attach) | ✅ | `accounts.test.ts` |
+| Support actions: unlock, disable, enable, MFA reset (reason, audited, not on self) | ✅ | `accounts.test.ts` |
+| Support impersonation (≤30 min, ticket + reason, both identities audited, user notified, staff excluded, ends on demand) | ✅ | `accounts.test.ts` |
+| Transactional email outbox + delivery job (bodies purged after send); production provider pending (D-044) | ✅ / ⬜ | `accounts.test.ts` |
+| Prometheus `/metrics` with business health gauges | ✅ | `accounts.test.ts` |
+| Console: verify/reset/invite link handling, forgot-password | ✅ | browser-checked |
+| Purge jobs for nonces/heartbeats (M1.10), OpenTelemetry tracing | ⬜ | |
+
+Risk R-019 mitigated. Test totals: finance-core 28, API 138.
+
 ### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
-1. Phase 1 remainder: email verification, invitations/password reset, unlock, support impersonation endpoints, metrics.
-2. Phase 5 rider engagement: rider accounts and QR sign-in, coupons wallet, geofenced alerts, skill games, reward accounting.
-3. M2.5 Android player (needs a real device and D-017).
-4. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).
+1. Phase 5 rider engagement: rider accounts and QR sign-in, coupons wallet, geofenced alerts, skill games, reward accounting.
+2. M2.5 Android player (needs a real device and D-017).
+3. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).
