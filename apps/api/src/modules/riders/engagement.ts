@@ -7,7 +7,7 @@ import { withTx } from '../../db/pool.js';
 import { audit } from '../../lib/audit.js';
 import { conflict, forbidden, notFound, unprocessable } from '../../lib/errors.js';
 import { parse, uuid } from '../../lib/validation.js';
-import { actorOf, authorize } from '../../auth/context.js';
+import { actorOf, authorize, requireAuth } from '../../auth/context.js';
 import { authenticateDevice } from '../devices/routes.js';
 import { isScheduleActive } from '../campaigns/schedule.js';
 import { advertiserAvailableMilli, campaignSpend, nextPlayBlock } from '../campaigns/budget.js';
@@ -120,6 +120,12 @@ export async function engagementRoutes(app: FastifyInstance, { db, config }: { d
     const r = await db.query(`UPDATE geofence_alerts SET outcome = $3, outcome_at = now() WHERE id = $1 AND device_id = $2 AND expires_at > now() - interval '10 minutes' RETURNING id, outcome`, [id, dev.deviceId, outcome]);
     if (!r.rows[0]) throw notFound('alert not found');
     return r.rows[0];
+  });
+
+  /** Game catalog for business users choosing a game for a sponsored reward. */
+  app.get('/v1/games', async (req) => {
+    requireAuth(req);
+    return { items: (await db.query(`SELECT slug, name, kind FROM games WHERE status = 'ACTIVE' AND (NOT chance_based OR legal_approval_ref IS NOT NULL) ORDER BY name`)).rows };
   });
 
   // ================= games (tablet) =================

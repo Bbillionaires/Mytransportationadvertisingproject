@@ -190,3 +190,12 @@ See `RIDERS.md`. Integration keys now accept `scopes: ['conversions:write' | 're
 - Media: creator playlists/series, object-store adapter, virus scanning.
 - Campaigns: geofences and per-campaign budgets.
 - Payouts: `/v1/finance/payout-batches` (dual approval), provider onboarding links.
+
+## Session 16 additions
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/games` | any signed-in user; active skill games `{slug, name, kind}` (used when sponsoring a reward) |
+| GET | `/dev/checkout/:sessionId` | **development only** (`PAYMENTS_PROVIDER=fake`, never production): simulated hosted checkout page |
+| POST | `/dev/checkout/:sessionId/pay` | development only: emits the signed webhook events Stripe would send, through `/v1/webhooks/stripe`; redirects to the success URL |
+
+Framework client errors (unsupported media type, payload too large, malformed body) now keep their 4xx status instead of being reported as 500. Checkout success and cancel URLs, and all account email links, point to `/portal/`.

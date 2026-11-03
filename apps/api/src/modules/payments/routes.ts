@@ -75,7 +75,7 @@ export async function paymentRoutes(app: FastifyInstance, { db, config, provider
     const metadata = { driverId: d.id, purpose: 'DRIVER_SUBSCRIPTION' };
     const customer = await provider.createCustomer({ email: d.email, metadata });
     const s = await provider.createSubscriptionCheckout({ customerId: customer.id, priceId: config.STRIPE_DRIVER_PRICE_ID, metadata,
-      successUrl: `${config.APP_PUBLIC_URL}/admin/?subscription=success`, cancelUrl: `${config.APP_PUBLIC_URL}/admin/?subscription=canceled` });
+      successUrl: `${config.APP_PUBLIC_URL}/portal/?subscription=success`, cancelUrl: `${config.APP_PUBLIC_URL}/portal/?subscription=canceled` });
     await db.query(`INSERT INTO checkout_sessions (provider, provider_session_id, purpose, driver_id, amount_minor, url, created_by) VALUES ($1,$2,'DRIVER_SUBSCRIPTION',$3,3000,$4,$5)`,
       [PROCESSOR, s.id, d.id, s.url, requireAuth(req).userId]);
     await audit(db, actorOf(req), 'driver.subscription_checkout_started', { type: 'driver', id: d.id, orgId: d.org_id }, { disclosureAccepted: true });
@@ -111,7 +111,7 @@ export async function paymentRoutes(app: FastifyInstance, { db, config, provider
     if (b.amountMinor < 1000n || b.amountMinor > 10_000_000n) throw unprocessable('prepayments must be between $10.00 and $100,000.00');
     const email = (await db.query('SELECT email FROM users WHERE id = $1', [auth.userId])).rows[0].email;
     const s = await provider.createPaymentCheckout({ amountMinor: Number(b.amountMinor), currency: 'USD', description: `Prepaid advertising balance — ${org.name}`, customerEmail: email,
-      metadata: { purpose: 'ADVERTISER_PREPAYMENT', orgId }, successUrl: `${config.APP_PUBLIC_URL}/admin/?prepayment=success`, cancelUrl: `${config.APP_PUBLIC_URL}/admin/?prepayment=canceled` });
+      metadata: { purpose: 'ADVERTISER_PREPAYMENT', orgId }, successUrl: `${config.APP_PUBLIC_URL}/portal/?prepayment=success#/billing`, cancelUrl: `${config.APP_PUBLIC_URL}/portal/?prepayment=canceled#/billing` });
     await db.query(`INSERT INTO checkout_sessions (provider, provider_session_id, purpose, org_id, amount_minor, url, created_by) VALUES ($1,$2,'ADVERTISER_PREPAYMENT',$3,$4,$5,$6)`,
       [PROCESSOR, s.id, orgId, b.amountMinor.toString(), s.url, auth.userId]);
     await audit(db, actorOf(req), 'billing.prepayment_checkout_started', { type: 'organization', id: orgId, orgId }, { amountMinor: b.amountMinor.toString() });

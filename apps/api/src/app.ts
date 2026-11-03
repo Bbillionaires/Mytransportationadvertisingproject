@@ -29,6 +29,7 @@ import { engagementRoutes } from './modules/riders/engagement.js';
 import type { PaymentProvider } from './modules/payments/provider.js';
 import { StripeProvider } from './modules/payments/stripe.js';
 import { FakePaymentProvider } from './modules/payments/fake.js';
+import { devCheckoutRoutes } from './modules/payments/devCheckout.js';
 
 /** Postgres error codes raised by our integrity triggers/constraints, surfaced as client errors. */
 const PG_CLIENT_ERRORS: Record<string, [number, string]> = {
@@ -45,7 +46,7 @@ const FINANCE_RULE_ERRORS = new Set(['MoneyError', 'AllocationError', 'RuleError
 
 export async function buildApp(opts: { config: Config; db: Db; logger?: boolean | object; paymentProvider?: PaymentProvider }): Promise<FastifyInstance> {
   const { config, db } = opts;
-  const provider = opts.paymentProvider ?? (config.PAYMENTS_PROVIDER === 'stripe' ? new StripeProvider(config.STRIPE_SECRET_KEY!) : new FakePaymentProvider());
+  const provider = opts.paymentProvider ?? (config.PAYMENTS_PROVIDER === 'stripe' ? new StripeProvider(config.STRIPE_SECRET_KEY!) : new FakePaymentProvider(`${config.APP_PUBLIC_URL}/dev/checkout`));
   const app = Fastify({
     logger: opts.logger ?? { level: config.LOG_LEVEL, redact: ['req.headers.authorization', 'req.headers["x-device-signature"]'] },
     bodyLimit: 1024 * 1024,
@@ -79,6 +80,10 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
     const pg = typeof err.code === 'string' ? PG_CLIENT_ERRORS[err.code] : undefined;
     if (pg) return reply.code(pg[0]).send({ error: { code: pg[1], message: err.message }, requestId: req.id });
     if (err.validation || err.statusCode === 400) return reply.code(400).send({ error: { code: 'BAD_REQUEST', message: err.message }, requestId: req.id });
+    // Framework client errors (unsupported media type, body too large, malformed JSON…) keep their 4xx status.
+    if (typeof err.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 500) {
+      return reply.code(err.statusCode).send({ error: { code: String(err.code ?? 'CLIENT_ERROR'), message: err.message }, requestId: req.id });
+    }
     req.log.error({ err }, 'unhandled error');
     return reply.code(500).send({ error: { code: 'INTERNAL', message: 'internal error' }, requestId: req.id });
   });
@@ -103,6 +108,7 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
   await app.register(playlistRoutes, { db, config });
   await app.register(mediaRoutes, { db, config });
   await app.register(paymentRoutes, { db, config, provider });
+  if (provider instanceof FakePaymentProvider && config.NODE_ENV !== 'production') await app.register(devCheckoutRoutes, { config, fake: provider });
   await app.register(commissionRoutes, { db, config });
   await app.register(reportRoutes, { db });
   await app.register(riderRoutes, { db, config });

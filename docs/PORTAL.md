@@ -1,6 +1,6 @@
 # Business portal
 
-`apps/portal` is the web portal for business users at `/portal/`. It is built in stages. **Fleet operators come first** (session 15). Advertiser, creator, driver and staff sections follow; until then those users see a placeholder, and staff keep using `/admin/`.
+`apps/portal` is the web portal for business users at `/portal/`. It is built in stages: **fleet operators** (session 15), then **advertisers** (session 16). Creator, driver and staff sections follow; until then those users see a placeholder, and staff keep using `/admin/`.
 
 > Status: tested end to end in a real browser against the real API and database. Not yet used by a real fleet.
 
@@ -22,13 +22,39 @@
 
 The tablets list refreshes every 30 seconds while visible. Every change is written to the audit log.
 
+## Advertiser sections
+| Section | What it does | Permission |
+|---|---|---|
+| Overview | Available balance, campaigns running, impressions / qualified views / taps (last 7 days), to-do list (empty balance, drafts, campaigns needing changes) | `campaign.read` |
+| Campaigns | List with status, dates, price and budget. **New campaign**: name, category (restricted categories refused), pay per qualified view or per 1,000 impressions, price, dates, total/daily budget, markets, landing page, schedule (days, hours, time zone), skip delay, frequency cap | `campaign.read` / `campaign.manage` |
+| Campaign page | Status and reviewer's note; edit drafts and rejected campaigns; submit, pause, resume, end (confirmed). Spend, today's spend and remaining budget; delivery status in plain language (e.g. "prepaid balance is used up"); results for the last 7 days and since start (impressions, qualified and completed views, taps, tap rate, seconds watched; validated plays only) | `campaign.read` / `campaign.manage` |
+| Ads | Upload video or image ads with a progress bar. The upload is resumable and chunked, with SHA-256 checked by the server; ffmpeg probes and transcodes it, and the duration comes from the file, not the advertiser. Text banners can also be added. Every ad shows its review status and note | `media.upload` / `campaign.manage` |
+| Coupons & commissions | Percent or fixed commission offers with a rider-facing coupon description and validity window; end an offer | `campaign.manage` |
+| Location alerts | Place, message, latitude/longitude, radius; shows how many alerts were shown, opened and claimed; pause/resume | `campaign.manage` |
+| Game rewards | Sponsor a reward for a skill game (minimum score, quantity, face value, dates). Shows given away, redeemed and outstanding obligation; end a program | `campaign.read` / `campaign.manage` |
+| Billing | Available, prepaid, delivered-not-yet-billed and commissions owed; **Add funds** ($10–$100,000) through hosted checkout (simulated in development, see PAYMENTS.md); receipts | `campaign.read` / `billing.manage` |
+| Team | Invite advertiser admins and read-only members | `org.members.manage` |
+
+Read-only members see results and balances but no management actions and no billing documents.
+
 ## Security notes
 - Strict CSP: scripts and styles from the same origin only, no inline script, no framing.
 - All server text is rendered with `textContent`. There is no HTML injection path.
 - Retiring a tablet invalidates its key immediately (signed requests return 401), ends its assignment and rider session, and expires its pending commands.
 - Enrollment codes are stored hashed; the list endpoint never returns a code.
 
-## Testing
+## Testing (advertiser)
+`apps/portal/e2e/advertiser.e2e.ts` runs against the real API, PostgreSQL and ffmpeg. It:
+- adds $250 through the simulated checkout, then checks the balance and receipt
+- creates a draft campaign; submitting it with no ads is refused
+- uploads a real 8-second video (processed by ffmpeg) and adds a banner, an offer and a location alert
+- submits the campaign; a reviewer rejects it with a note; the advertiser edits and resubmits; the reviewer approves it
+- has a real web-player tablet in the market play the ad, then checks that validated results and spend appear on the campaign page
+- pauses and resumes the campaign, and sponsors a trivia reward
+- signs in a read-only member on a phone-sized screen and confirms they cannot change anything
+- checks that every action was audited
+
+## Testing (fleet)
 `npm run e2e -w @rmn/portal` does the following in Chromium:
 - signs in a fleet admin
 - adds a fleet and a vehicle

@@ -32,6 +32,8 @@ const schema = z.object({
   APP_PUBLIC_URL: z.string().url().default('http://127.0.0.1:8080'),
   /** Bearer token for GET /metrics (Prometheus). Unset = endpoint disabled. */
   METRICS_TOKEN: z.string().min(24).optional(),
+  /** Development only: run media/webhook/email/validation jobs inside the API process. */
+  DEV_IN_PROCESS_JOBS: z.enum(['true', 'false']).default('false'),
   /** Live money movement is hard-disabled until explicitly approved (see DECISIONS.md D-010). */
   LIVE_PAYMENTS_ENABLED: z.enum(['false']).default('false'),
 });
@@ -48,5 +50,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   if (parsed.data.PAYMENTS_PROVIDER === 'stripe' && !parsed.data.STRIPE_SECRET_KEY) throw new Error('PAYMENTS_PROVIDER=stripe requires STRIPE_SECRET_KEY (test mode)');
   if (parsed.data.NODE_ENV === 'production' && parsed.data.PAYMENTS_PROVIDER === 'fake') throw new Error('the fake payment provider cannot run in production');
+  if (parsed.data.NODE_ENV === 'production' && parsed.data.DEV_IN_PROCESS_JOBS === 'true') throw new Error('DEV_IN_PROCESS_JOBS cannot be used in production');
   return parsed.data;
 }

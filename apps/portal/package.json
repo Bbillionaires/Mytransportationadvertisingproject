@@ -7,7 +7,7 @@
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc -p .",
-    "e2e": "node build.mjs && tsx e2e/portal.e2e.ts"
+    "e2e": "node build.mjs && tsx e2e/portal.e2e.ts && tsx e2e/advertiser.e2e.ts"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

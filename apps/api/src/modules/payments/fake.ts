@@ -17,14 +17,17 @@ export class FakePaymentProvider implements PaymentProvider {
   balance: BalanceTransaction[] = [];
   canceled: string[] = [];
   refunds: Array<{ id: string; paymentIntentId: string; amountMinor: number }> = [];
+  /** With a base URL (dev server), checkout links open the simulated checkout page at base/sessionId. */
+  constructor(private readonly checkoutBaseUrl?: string) {}
+  private checkoutUrl(sessionId: string) { return this.checkoutBaseUrl ? `${this.checkoutBaseUrl}/${sessionId}` : `https://checkout.stripe.test/${id('pay')}`; }
 
   async createCustomer(p: { email: string; metadata: Record<string, string> }) { const c = id('cus'); this.customers.set(c, p); return { id: c }; }
-  async createSubscriptionCheckout(p: { customerId: string; priceId: string; metadata: Record<string, string> }) {
-    const s = { id: id('cs_test'), url: `https://checkout.stripe.test/${id('pay')}`, mode: 'subscription', ...p };
+  async createSubscriptionCheckout(p: { customerId: string; priceId: string; successUrl: string; cancelUrl: string; metadata: Record<string, string> }) {
+    const sid = id('cs_test'); const s = { id: sid, url: this.checkoutUrl(sid), mode: 'subscription', ...p };
     this.sessions.set(s.id, s); return { id: s.id, url: s.url };
   }
-  async createPaymentCheckout(p: { amountMinor: number; currency: string; customerEmail: string; metadata: Record<string, string> }) {
-    const s = { id: id('cs_test'), url: `https://checkout.stripe.test/${id('pay')}`, mode: 'payment', ...p };
+  async createPaymentCheckout(p: { amountMinor: number; currency: string; description?: string; customerEmail: string; successUrl: string; cancelUrl: string; metadata: Record<string, string> }) {
+    const sid = id('cs_test'); const s = { id: sid, url: this.checkoutUrl(sid), mode: 'payment', ...p };
     this.sessions.set(s.id, s); return { id: s.id, url: s.url };
   }
   async cancelSubscriptionAtPeriodEnd(sid: string) { this.canceled.push(sid); }

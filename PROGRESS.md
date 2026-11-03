@@ -280,8 +280,26 @@ Bugs found by e2e and fixed: a stale dialog close event answered the next confir
 
 Test totals: finance-core 28, API 158, Android unit tests, browser e2e: tablet ride, rider app, fleet portal.
 
+## 2026-11-03 — Session 16: advertiser portal
+
+| Item | Status | Evidence |
+|---|---|---|
+| Advertiser overview, campaign list, create/edit drafts, submit/pause/resume/end, reviewer's note, plain-language delivery status | ✅ | advertiser browser e2e |
+| Ads: resumable chunked upload with SHA-256 and progress, ffmpeg processing wait, video/image/text banner; review status per ad | ✅ | e2e uploads a real 8 s video |
+| Results (validated plays: impressions, qualified/completed views, taps, tap rate, seconds watched) and spend vs budget | ✅ | e2e: a real tablet plays the approved ad and results/spend appear |
+| Coupons & commission offers, location alerts (with shown/opened/claimed counts), sponsored game rewards with outstanding obligations | ✅ | e2e |
+| Billing: balances, add funds through hosted checkout, receipts; read-only members see no billing actions | ✅ | e2e (phone-sized member) |
+| Simulated checkout for development (`/dev/checkout`), driven through the real signed-webhook path; never in production | ✅ | `devcheckout.test.ts` + e2e |
+| `DEV_IN_PROCESS_JOBS=true`: media, webhooks, email log and event validation run inside `npm run dev` (refused in production) | ✅ written | not covered by automated tests (dev-only) |
+| `GET /v1/games`; framework 4xx errors no longer reported as 500 | ✅ | `devcheckout.test.ts` |
+
+Bugs found by e2e and fixed: the simulated checkout's HTML form was rejected (no form parser) and the error surfaced as a 500; new campaigns defaulted to starting 10 minutes in the future, so nothing played right after approval.
+
+Test totals: finance-core 28, API 162, Android unit tests, browser e2e: tablet ride, rider app, fleet portal, advertiser portal.
+
 ### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
-1. Portal: advertiser section (campaigns, creative upload, budgets and prepayment, offers and geofences, reports).
-2. Portal: creator, driver and staff sections (uploads/moderation status/earnings; driver earnings; moderation queue and finance approvals), then retire `/admin/`.
-3. Android field test on one tablet with the chosen EMM (D-017); key attestation at enrollment (R-028).
-4. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).
+1. Portal: creator section (channel, uploads with rights attestation, moderation status, appeals/counter-notices, earnings estimates).
+2. Portal: driver section (subscription, earnings, statements) and staff section (campaign/creative review queue, moderation, takedowns, finance approvals), then retire `/admin/`.
+3. Advertiser extras: integration keys UI for conversion reporting, CSV export of results.
+4. Android field test on one tablet with the chosen EMM (D-017); key attestation at enrollment (R-028).
+5. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).

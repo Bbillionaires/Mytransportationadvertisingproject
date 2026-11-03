@@ -16,6 +16,14 @@ Live money movement is disabled: `LIVE_PAYMENTS_ENABLED` can only be `false`, th
 
 Each posting is idempotent on the processor's object id (`stripe-invoice-paid:<in_>`, `stripe-payment:<pi_>`, `stripe-refund:<re_>`, `stripe-fee:<txn_>`, `stripe-payout:<txn_>`), so duplicate or replayed events can never double-post.
 
+## Simulated checkout (development only)
+With `PAYMENTS_PROVIDER=fake` (the default outside production), checkout links open `/dev/checkout/<session>` instead of Stripe. The page is clearly labelled as simulated. **Pay** builds the same signed events Stripe would send (`payment_intent.succeeded`; or `customer.subscription.created` + `invoice.paid` for subscriptions) and posts them to the real `/v1/webhooks/stripe` endpoint. Balances, receipts and ledger entries therefore follow the production code path. No money moves.
+
+Guards:
+- The fake provider is refused when `NODE_ENV=production`, and the route module throws if registered in production.
+- Each session can be paid once.
+- Sessions live in memory and are lost when the dev server restarts.
+
 ## Webhook inbox
 `POST /v1/webhooks/stripe` verifies the `Stripe-Signature` header (HMAC-SHA256 over `t.payload`, 5-minute tolerance), stores the event (unique per event id), then processes it. Failures retry with exponential backoff (`jobs:process-webhooks`, every minute). After 8 attempts the event becomes an `UNHANDLED_EVENT` exception. Ops view: `GET /v1/finance/webhooks`.
 

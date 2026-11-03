@@ -20,7 +20,7 @@ await withTx(db, async (tx) => {
   if (exists.rows[0]) { console.log('already seeded'); return; }
   const pw = await hashPassword(password);
   const org = async (kind: string, name: string) => (await tx.query('INSERT INTO organizations (kind, name, is_synthetic) VALUES ($1,$2,true) RETURNING id', [kind, `${name} (SYNTHETIC)`])).rows[0].id as string;
-  const user = async (email: string, name: string) => (await tx.query('INSERT INTO users (email, password_hash, display_name, is_synthetic) VALUES ($1,$2,$3,true) RETURNING id', [email, pw, `${name} (SYNTHETIC)`])).rows[0].id as string;
+  const user = async (email: string, name: string) => (await tx.query('INSERT INTO users (email, password_hash, display_name, is_synthetic, email_verified_at) VALUES ($1,$2,$3,true, now()) RETURNING id', [email, pw, `${name} (SYNTHETIC)`])).rows[0].id as string;
   const member = (u: string, o: string, role: string) => tx.query('INSERT INTO memberships (user_id, org_id, role_code) VALUES ($1,$2,$3)', [u, o, role]);
 
   const platform = await org('PLATFORM', 'Rideshare Media Network');

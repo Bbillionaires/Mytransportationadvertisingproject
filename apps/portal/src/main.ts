@@ -1,4 +1,6 @@
 import { qrSvg } from '../../player/src/qr';
+import { advertiserSections } from './advertiser';
+import { TOKEN, ORG, ss, $, el, btn, input, select, chip, toast, render, ago, fmtDate, api, errText, act, closeDialog, dialog, info, setUnauthorizedHandler, type Kid } from './ui';
 
 /**
  * Business portal. Plain DOM, hash routing; every value from the server is rendered with textContent.
@@ -6,100 +8,14 @@ import { qrSvg } from '../../player/src/qr';
  * the UI only hides actions the user's role cannot perform.
  */
 
-// ------------------------------------------------------------------ helpers
-const TOKEN = 'rmn_portal_token', ORG = 'rmn_portal_org';
-const ss = {
-  get: (k: string) => { try { return sessionStorage.getItem(k); } catch { return null; } },
-  set: (k: string, v: string) => { try { sessionStorage.setItem(k, v); } catch { /* ignore */ } },
-  del: (k: string) => { try { sessionStorage.removeItem(k); } catch { /* ignore */ } },
-};
-const $ = (s: string) => document.querySelector(s) as HTMLElement;
-type Kid = Node | string | null | false | undefined;
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, string> = {}, ...kids: Kid[]) {
-  const e = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
-  for (const k of kids) if (k) e.append(k);
-  return e;
-}
-const btn = (label: string, onClick: () => void | Promise<void>, cls = 'btn', attrs: Record<string, string> = {}) => {
-  const b = el('button', { type: 'button', class: cls, ...attrs }, label);
-  b.addEventListener('click', async () => { b.disabled = true; try { await onClick(); } finally { b.disabled = false; } });
-  return b;
-};
-const input = (label: string, attrs: Record<string, string>) => el('label', {}, label, el('input', attrs));
-function select(label: string, name: string, options: Array<[string, string]>, attrs: Record<string, string> = {}) {
-  const s = el('select', { name, ...attrs });
-  for (const [v, t] of options) s.append(el('option', { value: v }, t));
-  return el('label', {}, label, s);
-}
-const chip = (text: string, kind: '' | 'ok' | 'warn' | 'err' = '') => el('span', { class: `chip ${kind}` }, text);
-let toastTimer = 0;
-function toast(text: string, isErr = false) {
-  const t = $('#toast'); t.textContent = text; t.className = isErr ? 'err' : ''; t.hidden = false;
-  clearTimeout(toastTimer); toastTimer = window.setTimeout(() => { t.hidden = true; }, 5000);
-}
-const render = (...nodes: Kid[]) => $('#main').replaceChildren(...nodes.filter((n): n is Node | string => !!n));
-function ago(iso: string | null): string {
-  if (!iso) return 'never';
-  const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
-  return `${Math.floor(s / 86400)} d ago`;
-}
-const fmtDate = (iso: string) => new Date(iso).toLocaleString();
-
-class ApiError extends Error { constructor(public status: number, public code: string, message: string) { super(message); } }
-async function api<T = any>(method: string, path: string, body?: unknown): Promise<T> {
-  const token = ss.get(TOKEN);
-  const res = await fetch(path, { method, headers: { ...(body !== undefined ? { 'content-type': 'application/json' } : {}), ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body !== undefined ? JSON.stringify(body) : undefined });
-  const j = await res.json().catch(() => ({}));
-  if (res.status === 401 && token && !path.startsWith('/v1/auth/')) endSession(); // session expired or revoked
-  if (!res.ok) throw new ApiError(res.status, j.error?.code ?? 'ERROR', j.error?.details?.[0]?.message ?? j.details?.[0]?.message ?? j.error?.message ?? 'Something went wrong');
-  return j as T;
-}
-const errText = (e: unknown) => (e instanceof ApiError ? e.message : 'Network error. Please try again.');
-async function act(fn: () => Promise<unknown>, ok?: string) {
-  try { await fn(); if (ok) toast(ok); return true; } catch (e) { toast(errText(e), true); return false; }
-}
-
-/** Modal form. Resolves with the form values, or null when cancelled. */
-/** Close the dialog and wait for its (asynchronous) close event, so it cannot answer the next dialog. */
-function closeDialog(): Promise<void> {
-  const d = $('#dlg') as HTMLDialogElement;
-  if (!d.open) return Promise.resolve();
-  return new Promise((r) => { d.addEventListener('close', () => setTimeout(r), { once: true }); d.close(); });
-}
-
-function dialog(title: string, body: Kid[], submitLabel: string, danger = false): Promise<Record<string, string> | null> {
-  const d = $('#dlg') as HTMLDialogElement;
-  d.returnValue = '';
-  const f = el('form', { method: 'dialog' }, el('h2', {}, title), ...body,
-    el('p', { class: 'err', id: 'dlg-err' }),
-    el('div', { class: 'row' }, el('button', { class: 'btn', value: 'cancel', formnovalidate: '' }, 'Cancel'), el('button', { class: danger ? 'btn danger' : 'btn primary', value: 'ok' }, submitLabel)));
-  d.replaceChildren(f);
-  d.showModal();
-  return new Promise((resolve) => {
-    d.addEventListener('close', () => {
-      if (d.returnValue !== 'ok') return resolve(null);
-      resolve(Object.fromEntries([...new FormData(f)].map(([k, v]) => [k, String(v)])));
-    }, { once: true });
-  });
-}
-function info(title: string, ...body: Kid[]) {
-  const d = $('#dlg') as HTMLDialogElement;
-  d.replaceChildren(el('form', { method: 'dialog' }, el('h2', {}, title), ...body, el('div', { class: 'row' }, el('button', { class: 'btn primary', value: 'ok' }, 'Done'))));
-  d.showModal();
-  return new Promise<void>((r) => d.addEventListener('close', () => r(), { once: true }));
-}
 
 // ------------------------------------------------------------------ session state
 interface Membership { orgId: string; orgKind: string; role: string; permissions: string[] }
 interface Me { user: { id: string; email: string; displayName: string; mfaEnabled: boolean }; session: { mfaVerified: boolean }; memberships: Membership[] }
 let me: Me | null = null;
 let orgs: Array<{ id: string; kind: string; name: string }> = [];
-let current: { id: string; kind: string; name: string; perms: Set<string> } | null = null;
-const can = (p: string) => !!current?.perms.has(p);
+export let current: { id: string; kind: string; name: string; perms: Set<string> } | null = null;
+export const can = (p: string) => !!current?.perms.has(p);
 
 // ------------------------------------------------------------------ signed out
 /** Forget everything about the signed-in user (token, org, timers, cached identity). */
@@ -192,7 +108,9 @@ async function handleEmailLink(): Promise<boolean> {
 }
 
 // ------------------------------------------------------------------ shell
-const SECTIONS: Record<string, Array<{ id: string; title: string; perm: string; view: () => Promise<void> }>> = {
+export type Section = { id: string; title: string; perm: string; view: (arg?: string) => Promise<void> };
+const SECTIONS: Record<string, Section[]> = {
+  ADVERTISER: advertiserSections,
   FLEET_OPERATOR: [
     { id: 'overview', title: 'Overview', perm: 'device.read', view: () => fleetOverview() },
     { id: 'tablets', title: 'Tablets', perm: 'device.read', view: () => fleetTablets() },
@@ -227,6 +145,8 @@ async function boot() {
   sw.addEventListener('change', () => { ss.set(ORG, sw.value); history.replaceState(null, '', location.pathname); void boot(); });
   $('#org-switch').replaceChildren(mine.length > 1 ? sw : el('span', {}, pick.name));
   setOrg(pick.id);
+  const back = new URLSearchParams(location.search).get('prepayment');
+  if (back) { history.replaceState(null, '', location.pathname + location.hash); toast(back === 'success' ? 'Payment received. Your balance updates as soon as the processor confirms it.' : 'Payment canceled. Nothing was charged.', back !== 'success'); }
   await route();
 }
 
@@ -244,18 +164,18 @@ function sectionsFor() {
 async function route() {
   if (!current || !ss.get(TOKEN)) return;
   const list = sectionsFor();
-  const id = location.hash.replace(/^#\/?/, '') || list[0]!.id;
+  const [id, ...rest] = (location.hash.replace(/^#\/?/, '') || list[0]!.id).split('/');
   const sec = list.find((s) => s.id === id) ?? list[0]!;
   const nav = $('#nav'); nav.hidden = false;
   nav.replaceChildren(...list.map((s) => el('a', { href: `#/${s.id}`, ...(s.id === sec.id ? { 'aria-current': 'page' } : {}) }, s.title)));
   stopPolling();
-  try { await sec.view(); } catch (e) { render(el('div', { class: 'card' }, el('p', { class: 'err' }, errText(e)))); }
+  try { await sec.view(rest.join('/') || undefined); } catch (e) { render(el('div', { class: 'card' }, el('p', { class: 'err' }, errText(e)))); }
 }
 window.addEventListener('hashchange', () => { void route(); });
 
 let pollTimer = 0;
 const stopPolling = () => { clearInterval(pollTimer); pollTimer = 0; };
-const poll = (fn: () => Promise<void>, ms = 30_000) => { stopPolling(); pollTimer = window.setInterval(() => { if (!document.hidden && !($('#dlg') as HTMLDialogElement).open) void fn().catch(() => {}); }, ms); };
+export const poll = (fn: () => Promise<void>, ms = 30_000) => { stopPolling(); pollTimer = window.setInterval(() => { if (!document.hidden && !($('#dlg') as HTMLDialogElement).open) void fn().catch(() => {}); }, ms); };
 
 // ------------------------------------------------------------------ fleet data
 interface Device {
@@ -264,7 +184,7 @@ interface Device {
 }
 interface Vehicle { id: string; fleet_id: string; label: string; make_model: string | null; status?: string }
 interface Fleet { id: string; name: string; market: string; timezone: string }
-const base = () => `/v1/orgs/${current!.id}`;
+export const base = () => `/v1/orgs/${current!.id}`;
 const loadDevices = async () => (await api<{ items: Device[] }>('GET', `${base()}/devices`)).items.filter((d) => d.status !== 'RETIRED');
 const loadVehicles = async () => (await api<{ items: Vehicle[] }>('GET', `${base()}/vehicles`)).items;
 const loadFleets = async () => (await api<{ items: Fleet[] }>('GET', `${base()}/fleets`)).items;
@@ -450,7 +370,7 @@ async function fleetDrivers() {
 }
 
 // ------------------------------------------------------------------ shared sections
-async function team(roles: string[]) {
+export async function team(roles: string[]) {
   const inv = (await api('GET', `${base()}/invitations`)).items as any[];
   const f = el('form', { class: 'inline', id: 'invite-form' },
     input('Name', { name: 'displayName', required: '', maxlength: '200' }), input('Email', { name: 'email', type: 'email', required: '' }),
@@ -490,4 +410,5 @@ async function security() {
 }
 
 // ------------------------------------------------------------------ start
+setUnauthorizedHandler(endSession);
 void (async () => { if (!(await handleEmailLink())) await boot(); })();
