@@ -8,7 +8,8 @@ import type { Queryable } from '../../db/pool.js';
  */
 export const unitMilli = (pricing: string, rate: bigint) => (pricing === 'CPM' ? rate : rate * 1000n);
 
-const COUNTABLE = `(CASE WHEN c.pricing_model = 'CPQV' THEN v.qualified ELSE v.impression END)`;
+/** A billable play: qualified view for CPQV, impression for CPM. Shared by budgets, billing and reports. */
+export const COUNTABLE = `(CASE WHEN c.pricing_model = 'CPQV' THEN v.qualified ELSE v.impression END)`;
 
 export interface CampaignSpend { spendMilli: bigint; todayMilli: bigint; unallocatedMilli: bigint }
 

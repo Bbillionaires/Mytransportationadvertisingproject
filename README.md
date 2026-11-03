@@ -33,7 +33,7 @@ npm run dev   # business portal: http://127.0.0.1:8080/portal/ (fleet1@, driver1
 ## Tests
 ```bash
 npm run typecheck
-npm test            # 28 finance-core tests (incl. property tests) + 166 API tests (media tests need ffmpeg)
+npm test            # 28 finance-core tests (incl. property tests) + 167 API tests (media tests need ffmpeg)
 npm run e2e         # browser end-to-end: tablet player ride (web + simulated Android key), rider phone app, fleet, driver, advertiser, creator and staff portals
 (cd apps/android && ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug)   # needs ANDROID_HOME
 ```

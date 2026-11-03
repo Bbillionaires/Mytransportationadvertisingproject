@@ -12,7 +12,8 @@ import { actorOf, authorize } from '../../auth/context.js';
 import { loadOrg } from '../orgs/routes.js';
 import { campaignMetrics } from '../events/aggregate.js';
 import { isValidTimezone } from './schedule.js';
-import { advertiserAvailableMilli, campaignSpend, nextPlayBlock } from './budget.js';
+import { advertiserAvailableMilli, campaignSpend, COUNTABLE, nextPlayBlock, unitMilli } from './budget.js';
+import { toCsv } from '../../lib/csv.js';
 
 export const ALLOWED_CATEGORIES = ['GENERAL', 'FOOD_DRINK', 'RETAIL', 'ENTERTAINMENT', 'TRAVEL', 'LOCAL_SERVICES', 'AUTOMOTIVE', 'TECHNOLOGY', 'EDUCATION', 'HEALTH_WELLNESS', 'FINANCIAL_SERVICES', 'NONPROFIT'] as const;
 /** Refused outright until legal sets jurisdiction-specific rules (DECISIONS.md D-031). */
@@ -226,6 +227,41 @@ export async function campaignRoutes(app: FastifyInstance, { db, config }: { db:
     await ownedCampaign(db, orgId, id);
     const q = parse(z.object({ from: z.string().datetime(), to: z.string().datetime() }), req.query);
     return campaignMetrics(db, id, q.from, q.to);
+  });
+
+  /**
+   * Daily results for a campaign in its own time zone: validated plays, taps and billable spend (valid + held plays,
+   * the same rule budgets and billing use). JSON or CSV for spreadsheets.
+   */
+  app.get('/v1/orgs/:orgId/campaigns/:id/report', async (req, reply) => {
+    const { orgId, id } = parse(z.object({ orgId: uuid, id: uuid }), req.params);
+    await advertiserOrg(db, orgId);
+    await authorize(db, req, 'campaign.read', orgId);
+    const c = await ownedCampaign(db, orgId, id);
+    const q = parse(z.object({ from: z.string().datetime().optional(), to: z.string().datetime().optional(), format: z.enum(['json', 'csv']).default('json') }), req.query);
+    const from = q.from ?? c.starts_at.toISOString(), to = q.to ?? new Date(Math.min(Date.now(), new Date(c.ends_at).getTime()) + 1000).toISOString();
+    const r = await db.query(
+      `SELECT to_char(v.occurred_at AT TIME ZONE c.timezone, 'YYYY-MM-DD') AS day,
+              count(*) FILTER (WHERE v.status = 'VALID' AND v.type = 'AD_PLAYBACK' AND v.impression) AS impressions,
+              count(*) FILTER (WHERE v.status = 'VALID' AND v.type = 'AD_PLAYBACK' AND v.qualified) AS qualified_views,
+              count(*) FILTER (WHERE v.status = 'VALID' AND v.type = 'AD_PLAYBACK' AND v.completed) AS completions,
+              count(*) FILTER (WHERE v.status = 'VALID' AND v.type = 'CLICK') AS clicks,
+              count(*) FILTER (WHERE v.status IN ('VALID','HELD_REVIEW') AND v.type = 'AD_PLAYBACK' AND ${COUNTABLE}) AS billable,
+              count(*) FILTER (WHERE v.status = 'INVALID') AS rejected
+         FROM validated_events v JOIN campaigns c ON c.id = v.campaign_id
+        WHERE v.campaign_id = $1 AND v.occurred_at >= $2 AND v.occurred_at < $3 GROUP BY 1 ORDER BY 1`, [id, from, to]);
+    const unit = unitMilli(c.pricing_model, BigInt(c.rate_minor));
+    const ccy = c.currency.trim();
+    const rows = r.rows.map((x) => {
+      const milli = BigInt(x.billable) * unit;
+      return { date: x.day, impressions: Number(x.impressions), qualifiedViews: Number(x.qualified_views), completions: Number(x.completions), clicks: Number(x.clicks),
+        billablePlays: Number(x.billable), spendMilliMinor: milli.toString(), spend: `${milli / 100000n}.${String((milli / 1000n) % 100n).padStart(2, '0')}`, currency: ccy, rejectedEvents: Number(x.rejected) };
+    });
+    if (q.format === 'csv') {
+      const name = `campaign-${c.name.replace(/[^A-Za-z0-9]+/g, '-').slice(0, 40)}-daily`;
+      return reply.type('text/csv; charset=utf-8').header('content-disposition', `attachment; filename="${name}.csv"`).send(toCsv(rows, ['date', 'impressions', 'qualifiedViews', 'completions', 'clicks', 'billablePlays', 'spend', 'currency', 'spendMilliMinor', 'rejectedEvents']));
+    }
+    return { campaignId: id, timezone: c.timezone, pricingModel: c.pricing_model, from, to, rows, note: 'spend is truncated to whole cents for display; spendMilliMinor is exact.' };
   });
 
   /** Live committed spend (valid + held billable plays) against budgets, and whether delivery is currently allowed. */

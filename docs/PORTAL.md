@@ -34,6 +34,8 @@ The tablets list refreshes every 30 seconds while visible. Every change is writt
 | Location alerts | Place, message, latitude/longitude, radius; shows how many alerts were shown, opened and claimed; pause/resume | `campaign.manage` |
 | Game rewards | Sponsor a reward for a skill game (minimum score, quantity, face value, dates). Shows given away, redeemed and outstanding obligation; end a program | `campaign.read` / `campaign.manage` |
 | Billing | Available, prepaid, delivered-not-yet-billed and commissions owed; **Add funds** ($10–$100,000) through hosted checkout (simulated in development, see PAYMENTS.md); receipts | `campaign.read` / `billing.manage` |
+| Sales tracking | How sales are credited (a coupon beats a tap; sales with neither are recorded but not credited). Integration keys (report sales and/or redeem game rewards), with the full key shown once, last-used time and revoke. Developer quick start with a ready-to-run example. Reported sales with how each was credited, sale, refunds, commission and status, plus a CSV download | `campaign.read` / `integrations.manage` |
+| Campaign report | **Download daily report (CSV)** on each campaign: impressions, qualified and completed views, taps, billable plays, spend (exact milli-cent amount included) and rejected events per day, in the campaign's time zone | `campaign.read` |
 | Team | Invite advertiser admins and read-only members | `org.members.manage` |
 
 Read-only members see results and balances but no management actions and no billing documents.
@@ -89,6 +91,8 @@ A driver who has accepted an invitation but has not been added to a fleet sees a
 - has a real web-player tablet in the market play the ad, then checks that validated results and spend appear on the campaign page
 - pauses and resumes the campaign, and sponsors a trivia reward
 - signs in a read-only member on a phone-sized screen and confirms they cannot change anything
+- downloads the daily report and checks that its spend matches the portal
+- creates an integration key, reports a sale with it, sees the sale listed as "not credited" (no coupon or tap), downloads the CSV, then revokes the key and checks that it stops working
 - checks that every action was audited
 
 ## Testing (creator)

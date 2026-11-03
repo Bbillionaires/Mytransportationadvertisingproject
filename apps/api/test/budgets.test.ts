@@ -151,3 +151,25 @@ describe('scheduled allocation windows', () => {
     expect(mine.reason).toMatch(/held event/);
   });
 });
+
+describe('advertiser daily report', () => {
+  it('reports validated plays and exact billable spend per day, as JSON and spreadsheet-safe CSV', async () => {
+    await fund(advertiser, 100_000n);
+    const c = await campaign({ pricing: 'CPM', rate: 2000 }); // $20 CPM = 2 cents per impression
+    expect(await play(c, 3)).toEqual(['VALID', 'VALID', 'VALID']);
+    const r = (await api('GET', `/v1/orgs/${advertiser}/campaigns/${c.id}/report`, advAdmin.h)).json();
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0]).toMatchObject({ impressions: 3, billablePlays: 3, spendMilliMinor: '6000', spend: '0.06', currency: 'USD' });
+    expect(BigInt(r.rows[0].spendMilliMinor)).toBe(BigInt((await spend(c.id)).spentMilliMinor)); // same rule as budgets and billing
+    const csv = await api('GET', `/v1/orgs/${advertiser}/campaigns/${c.id}/report?format=csv`, advAdmin.h);
+    expect(csv.headers['content-type']).toMatch(/text\/csv/);
+    expect(csv.body.split('\r\n')[0]).toBe('date,impressions,qualifiedViews,completions,clicks,billablePlays,spend,currency,spendMilliMinor,rejectedEvents');
+    const empty = await campaign();
+    expect((await api('GET', `/v1/orgs/${advertiser}/campaigns/${empty.id}/report?format=csv`, advAdmin.h)).body.split('\r\n')[0]).toMatch(/^date,/); // headers even with no rows
+    const conv = await api('GET', `/v1/orgs/${advertiser}/conversions?format=csv`, advAdmin.h);
+    expect(conv.body.split('\r\n')[0]).toMatch(/^occurredAt,orderId,status/);
+    const other = await org(ctx.db, 'ADVERTISER');
+    const otherAdmin = await userWithRole(ctx, other, 'advertiser_admin');
+    expect((await api('GET', `/v1/orgs/${advertiser}/campaigns/${c.id}/report`, otherAdmin.h)).statusCode).toBe(403);
+  });
+});

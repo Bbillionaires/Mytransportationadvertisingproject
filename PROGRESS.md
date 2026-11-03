@@ -341,8 +341,20 @@ Test totals: finance-core 28, API 166, Android unit tests, browser e2e: tablet r
 
 The portal now covers every business user. Test totals: finance-core 28, API 166, Android unit tests, browser e2e: tablet ride, rider app, fleet, driver, advertiser, creator and staff portals.
 
+## 2026-11-03 — Session 20: advertiser reporting and sales tracking
+
+| Item | Status | Evidence |
+|---|---|---|
+| Daily campaign report (JSON/CSV) with exact billable spend using the same rule as budgets and billing | ✅ | `budgets.test.ts` (spend equals live spend; CSV headers even when empty; tenant isolation) |
+| Conversions CSV | ✅ | `budgets.test.ts` + advertiser e2e |
+| Portal "Sales tracking": integration keys (shown once, scopes, last used, revoke), developer quick start, reported sales with credit status | ✅ | advertiser e2e reports a sale with a real key, then revokes it (401) |
+| "Download daily report (CSV)" on each campaign | ✅ | e2e: CSV spend equals the portal |
+
+Bug found by e2e and fixed: uncredited sales (`touchType` NONE) showed a raw code instead of "not credited".
+
+Test totals: finance-core 28, API 167, Android unit tests, browser e2e: tablet ride, rider app, fleet, driver, advertiser, creator and staff portals.
+
 ### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
-1. Advertiser extras: integration keys UI for conversion reporting, CSV export of results.
-2. Android field test on one tablet with the chosen EMM (D-017); key attestation at enrollment (R-028).
-3. Hardening before a pilot: Postgres row-level security (R-003), object storage + CDN for media (R-021), isolated media worker (R-023), load and penetration tests (R-015).
-4. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).
+1. Android field test on one tablet with the chosen EMM (D-017); key attestation at enrollment (R-028).
+2. Hardening before a pilot: Postgres row-level security (R-003), object storage + CDN for media (R-021), isolated media worker (R-023), load and penetration tests (R-015).
+3. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).

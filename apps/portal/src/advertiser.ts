@@ -5,12 +5,13 @@
  */
 import { base, can, poll, team, type Section } from './main';
 import { uploadFile, waitForProcessing } from './upload';
-import { act, ago, api, btn, chip, closeDialog, dialog, el, errText, fmtDate, input, money, render, select, toMinor, toast, type Kid } from './ui';
+import { act, ago, api, btn, chip, closeDialog, dialog, download, el, errText, fmtDate, info, input, money, render, select, toMinor, toast, type Kid } from './ui';
 
 export const advertiserSections: Section[] = [
   { id: 'overview', title: 'Overview', perm: 'campaign.read', view: () => overview() },
   { id: 'campaigns', title: 'Campaigns', perm: 'campaign.read', view: (id) => (id ? campaignDetail(id) : campaigns()) },
   { id: 'rewards', title: 'Game rewards', perm: 'campaign.read', view: () => rewards() },
+  { id: 'sales', title: 'Sales tracking', perm: 'campaign.read', view: () => sales() },
   { id: 'billing', title: 'Billing', perm: 'campaign.read', view: () => billing() },
   { id: 'team', title: 'Team', perm: 'org.members.manage', view: () => team(['advertiser_admin', 'advertiser_member']) },
 ];
@@ -179,7 +180,8 @@ async function campaignDetail(id: string) {
       el('p', {}, spend.deliveryBlockedBy ? (BLOCK[spend.deliveryBlockedBy] ?? spend.deliveryBlockedBy) : 'Delivering to tablets in your markets during your schedule.'),
       el('p', { class: 'muted' }, `${c.markets.length ? c.markets.join(', ') : 'All markets'} · ${c.schedule.daysOfWeek.length === 7 ? 'every day' : c.schedule.daysOfWeek.map((d) => DAYS[d]).join(', ')} ${hhmm(c.schedule.startMinute)}–${c.schedule.endMinute >= 1440 ? '24:00' : hhmm(c.schedule.endMinute)} (${c.schedule.timezone}) · skip after ${c.skipDelaySeconds}s`)),
     el('div', { class: 'card' }, el('h2', {}, 'Results'), results,
-      el('p', { class: 'muted' }, `Counted from validated plays only. ${Number(all.invalidEvents) ? `${all.invalidEvents} plays were rejected by validation (not billed).` : ''}`)),
+      el('p', { class: 'muted' }, `Counted from validated plays only. ${Number(all.invalidEvents) ? `${all.invalidEvents} plays were rejected by validation (not billed).` : ''}`),
+      btn('Download daily report (CSV)', () => act(() => download(`${base()}/campaigns/${id}/report?format=csv`, `${c.name.replace(/[^A-Za-z0-9]+/g, '-')}-daily.csv`)), 'btn', { id: 'download-report' })),
     creativesCard(c, manage),
     offersCard(c, offers, manage),
     fencesCard(c, fences, manage));
@@ -358,3 +360,60 @@ async function billing() {
   poll(billing, 15_000);
 }
 
+
+// ------------------------------------------------------------------ sales tracking (conversions + integration keys)
+const SCOPE: Record<string, string> = { 'conversions:write': 'Report sales', 'rewards:redeem': 'Redeem game rewards at the counter' };
+const TOUCH: Record<string, string> = { COUPON: 'Coupon', CLICK: 'Tap / QR scan' };
+
+async function sales() {
+  const manageKeys = can('integrations.manage');
+  const [conv, keys] = await Promise.all([api('GET', `${base()}/conversions`).then((r) => r.items as any[]), manageKeys ? api('GET', `${base()}/integration-keys`).then((r) => r.items as any[]) : Promise.resolve([] as any[])]);
+  const create = async () => {
+    const v = await dialog('New integration key', [
+      el('p', { class: 'muted' }, 'Use one key per system (e.g. your online store, your point of sale). Keys are for servers only — never put them in a website or app.'),
+      input('Name', { name: 'name', required: '', maxlength: '100', placeholder: 'e.g. Online store' }),
+      el('fieldset', { class: 'kind' }, el('legend', {}, 'Allowed to'),
+        ...Object.entries(SCOPE).map(([k, t], i) => el('label', { class: 'check' }, el('input', { type: 'checkbox', name: `s${i}`, value: k, ...(i === 0 ? { checked: '' } : {}) }), t))),
+    ], 'Create key');
+    if (!v) return;
+    const scopes = Object.keys(SCOPE).filter((_, i) => v[`s${i}`]);
+    if (!scopes.length) return toast('Pick at least one permission.', true);
+    try {
+      const r = await api('POST', `${base()}/integration-keys`, { name: v.name, scopes });
+      await info('Copy your key now', el('p', {}, 'This is the only time the full key is shown. Store it in your server’s secret settings.'), el('div', { class: 'code', id: 'new-key' }, r.key));
+      await sales();
+    } catch (e) { toast(errText(e), true); }
+  };
+  const revoke = async (k: any) => {
+    if (await dialog(`Revoke “${k.name}”?`, [el('p', {}, 'Requests using this key stop working immediately. This cannot be undone.')], 'Revoke key', true)
+      && await act(() => api('POST', `${base()}/integration-keys/${k.id}/revoke`), 'Key revoked.')) await sales();
+  };
+  const origin = location.origin;
+  const sample = `curl -X POST ${origin}/v1/conversions \\
+  -H "Authorization: Bearer rmnk_YOUR_KEY" -H "Content-Type: application/json" \\
+  -d '{"orderId":"A-1001","occurredAt":"${new Date().toISOString().slice(0, 19)}Z","saleAmountMinor":"2450","currency":"USD","couponCode":"ABCDE23456"}'`;
+  render(el('h1', {}, 'Sales tracking'),
+    el('div', { class: 'card' }, el('h2', {}, 'How sales are credited'),
+      el('p', {}, 'When a rider uses a coupon from your ad, or buys after tapping or scanning it, report the sale with an integration key. A coupon code always wins over a tap; sales without either are recorded but not credited.'),
+      el('p', { class: 'muted' }, 'Commissions follow your offer terms and are held for the return window before they count. Refunds you report reduce them.')),
+    manageKeys ? el('div', { class: 'card', id: 'keys' }, el('div', { class: 'row-head' }, el('h2', {}, 'Integration keys'), btn('New key', create, 'btn primary', { id: 'new-key-btn' })),
+      keys.length ? el('table', {}, el('tbody', {}, ...keys.map((k) => el('tr', { 'data-key': k.name },
+        el('td', {}, k.name, el('div', { class: 'sub mono' }, `rmnk_${k.prefix}_••••`)),
+        el('td', { class: 'sub' }, (k.scopes as string[]).map((x) => SCOPE[x] ?? x).join(', ')),
+        el('td', { class: 'sub' }, k.last_used_at ? `last used ${ago(k.last_used_at)}` : 'never used'),
+        el('td', {}, k.revoked_at ? chip('Revoked') : btn('Revoke', () => revoke(k), 'btn small danger'))))))
+        : el('p', { class: 'muted' }, 'No keys yet.'),
+      el('details', { id: 'quick-start' }, el('summary', {}, 'Developer quick start'),
+        el('p', {}, 'Send each order from your server. Amounts are in cents; repeat calls with the same orderId are safe.'),
+        el('pre', { class: 'mono snippet' }, sample),
+        el('p', { class: 'muted' }, 'Report refunds with POST /v1/conversions/refunds. Counter staff redeem game rewards with POST /v1/rewards/redeem and a key allowed to redeem rewards.')))
+      : el('p', { class: 'muted' }, 'Ask an account admin to create an integration key for your store.'),
+    el('div', { class: 'card', id: 'conversions' }, el('div', { class: 'row-head' }, el('h2', {}, 'Reported sales (latest 500)'),
+      btn('Download CSV', () => act(() => download(`${base()}/conversions?format=csv`, 'conversions.csv')), 'btn small', { id: 'conversions-csv' })),
+      conv.length ? el('table', {}, el('thead', {}, el('tr', {}, ...['When', 'Order', 'Credited via', 'Sale', 'Commission', 'Status'].map((h) => el('th', {}, h)))),
+        el('tbody', {}, ...conv.map((x) => el('tr', {}, el('td', { class: 'sub' }, fmtDate(x.occurredAt)), el('td', {}, x.orderId),
+          el('td', {}, x.touchType && x.touchType !== 'NONE' ? TOUCH[x.touchType] ?? x.touchType : el('span', { class: 'muted' }, 'not credited')),
+          el('td', {}, money(x.saleAmountMinor, x.currency), x.refundedSaleMinor !== '0' ? el('div', { class: 'sub' }, `${money(x.refundedSaleMinor, x.currency)} refunded`) : null),
+          el('td', {}, money(x.commissionMinor, x.currency)), el('td', {}, chip(x.status === 'ATTRIBUTED' ? 'credited' : x.status === 'FULLY_REFUNDED' ? 'refunded' : 'not credited', x.status === 'ATTRIBUTED' ? 'ok' : ''))))))
+        : el('p', { class: 'muted' }, 'No sales reported yet.')));
+}

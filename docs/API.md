@@ -217,3 +217,9 @@ Framework client errors (unsupported media type, payload too large, malformed bo
 ## Session 19 changes
 - `GET /v1/orgs/:orgId/drivers` items include `user_id` (used to show accepted driver invitations that still need adding to a fleet).
 - `/admin` and `/admin/` redirect to `/portal/`; the old static admin console was removed.
+
+## Session 20 additions (advertiser reporting)
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/orgs/:orgId/campaigns/:id/report?from&to&format=json\|csv` | `campaign.read`; daily rows in the campaign's time zone: impressions, qualifiedViews, completions, clicks, billablePlays, spend (whole cents, truncated), spendMilliMinor (exact), rejectedEvents. Billable uses the same rule as budgets and billing |
+| GET | `/v1/orgs/:orgId/conversions?format=csv` | CSV of the latest 500 reported sales (fixed columns, formula-injection safe) |

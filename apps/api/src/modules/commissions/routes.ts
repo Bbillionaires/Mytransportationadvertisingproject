@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { toCsv } from '../../lib/csv.js';
 import type { Config } from '../../config.js';
 import type { Db, Tx } from '../../db/pool.js';
 import { withTx } from '../../db/pool.js';
@@ -295,10 +296,13 @@ export async function commissionRoutes(app: FastifyInstance, { db, config }: { d
     return { refundId: r.refund.id, commissionReductionMinor: String(r.refund.commission_reduction_minor), reversalRequestId: r.reversalRequestId ?? null, duplicate: r.duplicate };
   });
 
-  app.get('/v1/orgs/:orgId/conversions', async (req) => {
+  app.get('/v1/orgs/:orgId/conversions', async (req, reply) => {
     const { orgId } = parse(z.object({ orgId: uuid }), req.params);
     await authorize(db, req, 'campaign.read', orgId);
-    return { items: (await db.query('SELECT * FROM conversions WHERE advertiser_org_id = $1 ORDER BY occurred_at DESC LIMIT 500', [orgId])).rows.map(conversionApi) };
+    const { format } = parse(z.object({ format: z.enum(['json', 'csv']).default('json') }), req.query);
+    const items = (await db.query('SELECT * FROM conversions WHERE advertiser_org_id = $1 ORDER BY occurred_at DESC LIMIT 500', [orgId])).rows.map(conversionApi);
+    if (format === 'csv') return reply.type('text/csv; charset=utf-8').header('content-disposition', 'attachment; filename="conversions.csv"').send(toCsv(items, ['occurredAt', 'orderId', 'status', 'touchType', 'attributionReason', 'campaignId', 'offerId', 'currency', 'saleAmountMinor', 'refundedSaleMinor', 'commissionMinor', 'allocatableAfter', 'allocated']));
+    return { items };
   });
 
   app.post('/v1/finance/commissions/run', async (req) => {

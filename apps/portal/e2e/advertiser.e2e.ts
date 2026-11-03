@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import pg from 'pg';
@@ -111,7 +111,7 @@ async function main() {
     p.on('pageerror', (e) => problems.push(`${name} pageerror: ${e.message}`));
     p.on('console', (m) => { if (m.type() === 'error' && !/status of (4\d\d)|ERR_NAME_NOT_RESOLVED|net::ERR/.test(m.text())) problems.push(`${name} console: ${m.text()}`); });
   };
-  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
   const page = await ctx.newPage(); watch(page, 'portal');
   const signIn = async (p: import('playwright').Page, email: string) => {
     await p.goto(`${BASE}/portal/`);
@@ -233,6 +233,34 @@ async function main() {
     await page.click('#campaign-actions button:has-text("Resume")');
     await page.waitForSelector('.row-head .chip:has-text("Running")');
 
+    step('download the daily report: a spreadsheet-ready CSV whose spend matches the portal');
+    const [report] = await Promise.all([page.waitForEvent('download'), page.click('#download-report')]);
+    const csv = readFileSync((await report.path())!, 'utf8').trim().split('\r\n');
+    assert.equal(csv[0], 'date,impressions,qualifiedViews,completions,clicks,billablePlays,spend,currency,spendMilliMinor,rejectedEvents');
+    assert.equal(`$${csv[1]!.split(',')[6]}`, spent, 'CSV spend equals the spend shown in the portal'); // events are validated only by runValidation above, so spend is stable
+
+    step('sales tracking: create an integration key, report a sale with it from a server, then revoke it');
+    await nav(page, 'Sales tracking');
+    await page.click('#new-key-btn');
+    await dlgFill('name', 'Online store');
+    await page.click('#dlg button:has-text("Create key")');
+    const key = (await page.textContent('#new-key'))!.trim();
+    assert.match(key, /^rmnk_[0-9a-f]{12}_/);
+    await page.click('#dlg button:has-text("Done")');
+    await page.waitForSelector('#keys tr[data-key="Online store"]:has-text("never used")');
+    const report2 = (orderId: string, amount: string) => fetch(`${BASE}/v1/conversions`, { method: 'POST', headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ orderId, occurredAt: new Date().toISOString(), saleAmountMinor: amount, currency: 'USD' }) });
+    assert.equal((await report2('A-1001', '2450')).status, 201);
+    await page.reload();
+    await page.waitForSelector('#conversions tr:has-text("A-1001"):has-text("not credited")'); // no coupon and no tap: recorded, not credited
+    await page.waitForSelector('#keys tr[data-key="Online store"]:has-text("last used")');
+    const [convCsv] = await Promise.all([page.waitForEvent('download'), page.click('#conversions-csv')]);
+    assert.match(readFileSync((await convCsv.path())!, 'utf8'), /A-1001/);
+    await page.click('#keys tr[data-key="Online store"] button:has-text("Revoke")');
+    await page.click('#dlg button.danger:has-text("Revoke key")');
+    await page.waitForSelector('#keys tr[data-key="Online store"] .chip:has-text("Revoked")');
+    assert.equal((await report2('A-1002', '900')).status, 401, 'revoked keys stop working immediately');
+
     step('sponsor a trivia reward');
     await nav(page, 'Game rewards');
     await page.click('#new-reward');
@@ -262,12 +290,15 @@ async function main() {
     await nav(member, 'Billing');
     await member.waitForSelector('#stat-available');
     assert.equal(await member.locator('#fund-form').count(), 0, 'members cannot add funds');
+    await nav(member, 'Sales tracking');
+    await member.waitForSelector('#conversions td:has-text("A-1001")');
+    assert.equal(await member.locator('#new-key-btn').count(), 0, 'members cannot create integration keys');
     await member.screenshot({ path: path.join(SHOTS, 'advertiser-member-phone.png') });
     await memberCtx.close();
     await tabletCtx.close();
 
     const audit = (await q(`SELECT action FROM audit_log WHERE org_id = $1`, [adv])).map((r) => r.action);
-    for (const a of ['campaign.created', 'media.uploaded', 'creative.created', 'commission.offer_created', 'geofence.created', 'campaign.submit', 'campaign.updated', 'campaign.pause', 'reward_program.created'])
+    for (const a of ['integration.key_created', 'integration.key_revoked', 'conversion.reported', 'campaign.created', 'media.uploaded', 'creative.created', 'commission.offer_created', 'geofence.created', 'campaign.submit', 'campaign.updated', 'campaign.pause', 'reward_program.created'])
       assert.ok(audit.includes(a), `audited: ${a}`);
     assert.deepEqual(problems, [], 'no page errors or CSP violations');
     console.log(`  ✓ advertiser portal e2e passed (screenshots in ${SHOTS})`);

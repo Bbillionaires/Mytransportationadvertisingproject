@@ -18,7 +18,7 @@ export function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<
   for (const k of kids) if (k) e.append(k);
   return e;
 }
-export const btn = (label: string, onClick: () => void | Promise<void>, cls = 'btn', attrs: Record<string, string> = {}) => {
+export const btn = (label: string, onClick: () => unknown, cls = 'btn', attrs: Record<string, string> = {}) => {
   const b = el('button', { type: 'button', class: cls, ...attrs }, label);
   b.addEventListener('click', async () => { b.disabled = true; try { await onClick(); } finally { b.disabled = false; } });
   return b;
