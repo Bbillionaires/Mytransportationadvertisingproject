@@ -170,13 +170,15 @@ export async function mediaRoutes(app: FastifyInstance, { db, config }: { db: Db
     const { orgId } = parse(z.object({ orgId: uuid }), req.params);
     await authorize(db, req, 'creator.read', orgId);
     const r = await db.query(
-      `SELECT v.id, v.creator_id, v.title, v.status, v.duration_ms, v.created_at,
+      `SELECT v.id, v.creator_id, v.title, v.status, v.duration_ms, v.created_at, a.thumbnail_key,
+              (SELECT json_build_object('id', ap.id, 'status', ap.status, 'createdAt', ap.created_at, 'decidedAt', ap.decided_at)
+                 FROM moderation_appeals ap WHERE ap.video_id = v.id ORDER BY ap.created_at DESC LIMIT 1) AS appeal,
               (SELECT json_build_object('decision', decision, 'reasons', decision_reasons, 'note', decision_note, 'decidedAt', decided_at)
                  FROM moderation_cases mc WHERE mc.subject_type = 'VIDEO' AND mc.subject_id = v.id AND mc.status = 'DECIDED' ORDER BY decided_at DESC LIMIT 1) AS moderation,
               (SELECT json_agg(json_build_object('id', t.id, 'status', t.status, 'receivedAt', t.received_at, 'work', t.copyrighted_work, 'restoreEligibleAt', t.restore_eligible_at))
                  FROM takedown_notices t WHERE t.video_id = v.id) AS takedowns
-         FROM videos v JOIN creator_profiles cp ON cp.id = v.creator_id WHERE cp.org_id = $1 ORDER BY v.created_at DESC`, [orgId]);
-    return { items: r.rows };
+         FROM videos v JOIN creator_profiles cp ON cp.id = v.creator_id LEFT JOIN media_assets a ON a.id = v.asset_id WHERE cp.org_id = $1 ORDER BY v.created_at DESC`, [orgId]);
+    return { items: r.rows.map(({ thumbnail_key, ...v }) => ({ ...v, thumbnailUrl: thumbnail_key ? signed(thumbnail_key, 30) : null })) };
   });
 
   /** Submit a video for an uploaded file. Rights attestation is mandatory and stored immutably. */

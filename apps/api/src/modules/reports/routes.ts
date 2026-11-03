@@ -53,8 +53,8 @@ export async function reportRoutes(app: FastifyInstance, { db }: { db: Db }) {
       `SELECT v.id, v.title, v.status, v.duration_ms,
               count(e.id) FILTER (WHERE e.type = 'CONTENT_PLAYBACK' AND e.qualified) AS qualified_views,
               coalesce(sum(e.watch_seconds) FILTER (WHERE e.type = 'CONTENT_PLAYBACK'), 0) AS watch_seconds,
-              coalesce(sum(CASE WHEN c.pricing_model = 'CPQV' AND e.qualified THEN c.rate_minor * 1000 WHEN c.pricing_model = 'CPM' AND e.impression THEN c.rate_minor ELSE 0 END)
-                       FILTER (WHERE e.type = 'AD_PLAYBACK'), 0) / 1000 AS monetized_revenue,
+              div(coalesce(sum(CASE WHEN c.pricing_model = 'CPQV' AND e.qualified THEN c.rate_minor * 1000 WHEN c.pricing_model = 'CPM' AND e.impression THEN c.rate_minor ELSE 0 END)
+                       FILTER (WHERE e.type = 'AD_PLAYBACK'), 0), 1000)::bigint AS monetized_revenue, -- whole minor units (milli-minor / 1000, truncated)
               count(e.id) FILTER (WHERE e.type = 'CLICK') AS clicks,
               (SELECT count(*) FROM conversions cv LEFT JOIN validated_events ce ON ce.id = cv.click_event_id LEFT JOIN coupon_codes cc ON cc.id = cv.coupon_code_id
                 WHERE cv.status = 'ATTRIBUTED' AND coalesce(ce.video_id, cc.video_id) = v.id AND cv.occurred_at >= $2 AND cv.occurred_at < $3) AS conversions

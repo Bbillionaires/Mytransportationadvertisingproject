@@ -55,7 +55,9 @@ export async function api<T = any>(method: string, path: string, body?: unknown)
   if (!res.ok) throw new ApiError(res.status, j.error?.code ?? 'ERROR', j.error?.details?.[0]?.message ?? j.details?.[0]?.message ?? j.error?.message ?? 'Something went wrong');
   return j as T;
 }
-export const errText = (e: unknown) => (e instanceof ApiError ? e.message : 'Network error. Please try again.');
+export const errText = (e: unknown) => (e instanceof ApiError ? e.message
+  : e instanceof TypeError ? 'Network error. Please try again.' // fetch() rejects with TypeError when offline / unreachable
+  : e instanceof Error ? e.message : 'Something went wrong.');
 export async function act(fn: () => Promise<unknown>, ok?: string) {
   try { await fn(); if (ok) toast(ok); return true; } catch (e) { toast(errText(e), true); return false; }
 }
@@ -101,4 +103,15 @@ export function money(minor: string | number | bigint | null | undefined, curren
 export function toMinor(dollars: string): string | null {
   const m = /^\s*(\d{1,9})(?:\.(\d{1,2}))?\s*$/.exec(dollars.replace(/[$,]/g, ''));
   return m ? (BigInt(m[1]!) * 100n + BigInt((m[2] ?? '0').padEnd(2, '0'))).toString() : null;
+}
+
+/** Download an authenticated file (CSV/PDF) by fetching it with the session token and saving the blob. */
+export async function download(path: string, filename: string) {
+  const token = ss.get(TOKEN);
+  const res = await fetch(path, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) { const j = await res.json().catch(() => ({})); throw new ApiError(res.status, j.error?.code ?? 'ERROR', j.error?.message ?? 'download failed'); }
+  const url = URL.createObjectURL(await res.blob());
+  const a = el('a', { href: url, download: filename });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }

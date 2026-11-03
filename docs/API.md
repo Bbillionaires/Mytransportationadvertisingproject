@@ -199,3 +199,7 @@ See `RIDERS.md`. Integration keys now accept `scopes: ['conversions:write' | 're
 | POST | `/dev/checkout/:sessionId/pay` | development only: emits the signed webhook events Stripe would send, through `/v1/webhooks/stripe`; redirects to the success URL |
 
 Framework client errors (unsupported media type, payload too large, malformed body) now keep their 4xx status instead of being reported as 500. Checkout success and cancel URLs, and all account email links, point to `/portal/`.
+
+## Session 17 changes
+- `GET /v1/orgs/:orgId/videos` items also include `thumbnailUrl` (signed, 30 min) and `appeal` (`{id, status, createdAt, decidedAt}` or null).
+- `GET /v1/orgs/:orgId/videos/performance`: `monetizedRevenue` is always whole minor units (it was a decimal string).

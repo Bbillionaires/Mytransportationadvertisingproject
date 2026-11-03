@@ -151,7 +151,7 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
     'camera=(self), geolocation=(), microphone=()');
   // Business portal (apps/portal): fleet operators first, other roles follow.
   webApp('portal', '../../portal/dist', ['index.html', 'portal.js', 'portal.js.map', 'portal.css'],
-    `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
+    `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: ${mediaOrigin}; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
     'camera=(), geolocation=(), microphone=()');
   return app;
 }

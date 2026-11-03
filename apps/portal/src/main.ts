@@ -1,5 +1,6 @@
 import { qrSvg } from '../../player/src/qr';
 import { advertiserSections } from './advertiser';
+import { creatorSections } from './creator';
 import { TOKEN, ORG, ss, $, el, btn, input, select, chip, toast, render, ago, fmtDate, api, errText, act, closeDialog, dialog, info, setUnauthorizedHandler, type Kid } from './ui';
 
 /**
@@ -25,8 +26,9 @@ function endSession() {
   signedOut();
 }
 
-function signedOut(view: 'signin' | 'forgot' = 'signin', note = ''): void {
+function signedOut(view: 'signin' | 'forgot' | 'register' = 'signin', note = ''): void {
   $('#nav').hidden = true; $('#who').replaceChildren(); $('#org-switch').replaceChildren();
+  if (view === 'register') return register();
   if (view === 'forgot') {
     const f: HTMLFormElement = el('form', { class: 'card narrow', id: 'forgot' }, el('h1', {}, 'Reset your password'),
       el('p', { class: 'muted' }, "Enter your work email and we'll send a reset link."),
@@ -45,7 +47,8 @@ function signedOut(view: 'signin' | 'forgot' = 'signin', note = ''): void {
     input('Work email', { type: 'email', name: 'email', required: '', autocomplete: 'username' }),
     input('Password', { type: 'password', name: 'password', required: '', autocomplete: 'current-password' }),
     el('p', { class: 'err', id: 'signin-err' }),
-    el('button', { class: 'btn primary', type: 'submit' }, 'Sign in'), btn('Forgot password?', () => signedOut('forgot'), 'btn link'));
+    el('button', { class: 'btn primary', type: 'submit' }, 'Sign in'), btn('Forgot password?', () => signedOut('forgot'), 'btn link'),
+    el('p', { class: 'muted' }, 'New creator or advertiser? ', btn('Create an account', () => signedOut('register'), 'btn link', { id: 'to-register' })));
   f.addEventListener('submit', async (e) => {
     e.preventDefault();
     const d = new FormData(f);
@@ -55,6 +58,32 @@ function signedOut(view: 'signin' | 'forgot' = 'signin', note = ''): void {
       if (r.mfaRequired) return mfaChallenge();
       await boot();
     } catch (err) { $('#signin-err').textContent = errText(err); }
+  });
+  render(f);
+}
+
+/** Self-service sign-up for creator channels and advertisers. Fleet, driver and staff accounts are by invitation. */
+function register() {
+  const f: HTMLFormElement = el('form', { class: 'card narrow', id: 'register' }, el('h1', {}, 'Create an account'),
+    el('fieldset', { class: 'kind' }, el('legend', {}, 'I am'),
+      el('label', { class: 'check' }, el('input', { type: 'radio', name: 'kind', value: 'creator', checked: '' }), 'a creator — I make videos for passengers'),
+      el('label', { class: 'check' }, el('input', { type: 'radio', name: 'kind', value: 'advertiser' }), 'an advertiser — I want to reach riders')),
+    input('Channel or business name', { name: 'org', required: '', minlength: '2', maxlength: '100' }),
+    input('Your name', { name: 'displayName', required: '', maxlength: '200', autocomplete: 'name' }),
+    input('Work email', { name: 'email', type: 'email', required: '', autocomplete: 'email' }),
+    input('Password (at least 12 characters)', { name: 'password', type: 'password', required: '', minlength: '12', autocomplete: 'new-password' }),
+    el('p', { class: 'muted small' }, 'Fleet operators, drivers and staff join by invitation from their organization.'),
+    el('p', { class: 'err', id: 'register-err' }),
+    el('button', { class: 'btn primary', type: 'submit' }, 'Create account'), btn('Back to sign in', () => signedOut(), 'btn link'));
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const d = Object.fromEntries(new FormData(f)) as Record<string, string>;
+    const creator = d.kind === 'creator';
+    try {
+      await api('POST', creator ? '/v1/creators/register' : '/v1/advertisers/register', {
+        ...(creator ? { channelName: d.org } : { organizationName: d.org }), displayName: d.displayName, email: d.email, password: d.password });
+      signedOut('signin', `Check ${d.email} for a confirmation link, then sign in. (If you already have an account, we sent you a sign-in reminder instead.)`);
+    } catch (err) { $('#register-err').textContent = errText(err); }
   });
   render(f);
 }
@@ -111,6 +140,7 @@ async function handleEmailLink(): Promise<boolean> {
 export type Section = { id: string; title: string; perm: string; view: (arg?: string) => Promise<void> };
 const SECTIONS: Record<string, Section[]> = {
   ADVERTISER: advertiserSections,
+  CREATOR_STUDIO: creatorSections,
   FLEET_OPERATOR: [
     { id: 'overview', title: 'Overview', perm: 'device.read', view: () => fleetOverview() },
     { id: 'tablets', title: 'Tablets', perm: 'device.read', view: () => fleetTablets() },

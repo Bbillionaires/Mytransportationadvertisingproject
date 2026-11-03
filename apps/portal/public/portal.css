@@ -65,3 +65,11 @@ dialog { max-height: calc(100vh - 32px); overflow-y: auto; }
 .stat .n { overflow-wrap: anywhere; }
 #stat-price .n { font-size: 17px; }
 @media (max-width: 520px) { .two { grid-template-columns: 1fr; } }
+img.thumb, div.thumb { width: 96px; height: 54px; object-fit: cover; border-radius: 6px; background: var(--chip); display: block; }
+fieldset.attestation { border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; display: grid; gap: 8px; }
+fieldset.attestation legend { font-size: 13px; color: var(--muted); padding: 0 4px; }
+label.check.attest { align-items: flex-start; font-size: 13px; line-height: 1.4; }
+label.check.attest input { margin-top: 2px; flex: none; }
+.notice { margin: 0; }
+fieldset.kind { border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; display: grid; gap: 6px; }
+fieldset.kind legend { font-size: 13px; color: var(--muted); padding: 0 4px; }

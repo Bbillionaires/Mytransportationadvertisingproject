@@ -77,6 +77,7 @@ describe('creator dashboard', () => {
   it('ranks videos and exports CSV', async () => {
     const v = (await api(`/v1/orgs/${studio}/videos/performance?sort=watchHours`, creatorUser.h)).json();
     expect(v.items[0]).toMatchObject({ title: 'Murals', status: 'APPROVED', qualifiedViews: 0 });
+    for (const i of v.items) expect(i.monetizedRevenue).toMatch(/^\d+$/); // whole minor units, never a decimal string
     const csv = await api(`/v1/orgs/${studio}/earnings?format=csv`, creatorUser.h);
     expect(csv.headers['content-type']).toMatch(/text\/csv/);
     expect(csv.body.split('\r\n')[0]).toContain('netAmount');

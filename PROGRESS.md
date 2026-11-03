@@ -297,9 +297,26 @@ Bugs found by e2e and fixed: the simulated checkout's HTML form was rejected (no
 
 Test totals: finance-core 28, API 162, Android unit tests, browser e2e: tablet ride, rider app, fleet portal, advertiser portal.
 
+## 2026-11-03 — Session 17: creator portal and self sign-up
+
+| Item | Status | Evidence |
+|---|---|---|
+| Portal sign-up for creators and advertisers, email confirmation from the link | ✅ | creator browser e2e |
+| Creator overview: channel/monetization status, counts, 30-day views and watch hours, earnings, to-do list | ✅ | e2e |
+| Video upload with the mandatory 4-part rights statement, progress, automatic processing → review | ✅ | e2e (real ffmpeg; attestation row checked) |
+| Review outcomes with reasons and notes; one appeal per decision; copyright notice → sworn counter-notice with restoration date | ✅ | e2e |
+| Performance (7/30/90 days) and earnings (summary, sources, lines, disclosure, PDF/CSV ledger statements) | ✅ | e2e downloads a real PDF; earnings lines covered by `reports.test.ts` |
+| API: video list adds thumbnail and appeal status; performance revenue in whole cents | ✅ | `reports.test.ts` |
+
+Bugs found by e2e and fixed: the performance report returned revenue as a decimal string, which broke the page; unexpected errors were shown as "Network error" instead of their message.
+
+Gap found: there is no staff endpoint or screen to confirm a creator's monetization eligibility (the e2e sets it directly). It belongs in the staff section.
+
+Test totals: finance-core 28, API 162, Android unit tests, browser e2e: tablet ride, rider app, fleet, advertiser and creator portals.
+
 ### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
-1. Portal: creator section (channel, uploads with rights attestation, moderation status, appeals/counter-notices, earnings estimates).
-2. Portal: driver section (subscription, earnings, statements) and staff section (campaign/creative review queue, moderation, takedowns, finance approvals), then retire `/admin/`.
+1. Portal: staff section — campaign/creative review queue, video moderation and appeals, takedowns, creator monetization eligibility (new endpoint), driver eligibility, finance approvals; then retire `/admin/`.
+2. Portal: driver section (subscription, earnings, statements, assigned tablet).
 3. Advertiser extras: integration keys UI for conversion reporting, CSV export of results.
 4. Android field test on one tablet with the chosen EMM (D-017); key attestation at enrollment (R-028).
 5. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).
