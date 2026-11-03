@@ -1,4 +1,4 @@
-import { ApiError, APP_VERSION, Device } from './device';
+import { ApiError, Device } from './device';
 import { flush, record } from './events';
 import { Exposure } from './exposure';
 import { qrSvg } from './qr';
@@ -363,7 +363,7 @@ async function heartbeatLoop() {
     try {
       const storage = (await navigator.storage?.estimate?.().catch(() => null)) ?? null;
       const r = await state.device!.call('POST', '/v1/devices/heartbeat', {
-        appVersion: APP_VERSION, connectivity: navigator.onLine ? 'UNKNOWN' : 'OFFLINE_RECOVERED',
+        appVersion: state.device!.appVersion, connectivity: navigator.onLine ? 'UNKNOWN' : 'OFFLINE_RECOVERED',
         ...(storage?.quota && storage.usage !== undefined ? { storageFreeBytes: Math.max(0, Math.floor(storage.quota - storage.usage)) } : {}),
         playback: { state: state.playbackState },
       });

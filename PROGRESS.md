@@ -248,7 +248,24 @@ In-app camera scanning is not exercised by automation (no camera/BarcodeDetector
 
 Test totals: finance-core 28, API 153, browser e2e: tablet ride + rider app.
 
+## 2026-11-03 — Session 14: Android kiosk shell (D-052, D-053)
+
+| Item | Status | Evidence |
+|---|---|---|
+| `apps/android`: Kotlin shell loading the web player full-screen; managed config (`server_url`, `kiosk_enabled`); boot start; renderer-crash recovery; offline retry | ✅ builds | `./gradlew assembleDebug` |
+| Device key in Android Keystore (ECDSA P-256, StrongBox preferred), never exported | ✅ written | not run on hardware (R-004) |
+| Origin-restricted WebMessage bridge; signs only canonical `/v1/devices/` strings | ✅ | `BridgeProtocolTest` |
+| Main frame locked to the server origin; https-only server URL in release | ✅ | `UrlPolicyTest` |
+| Kiosk: lock task, HOME, keyguard/status bar disabled when device owner | ✅ written | needs a real tablet + EMM (D-017) |
+| API accepts ECDSA P-256 device keys (DER signatures) besides Ed25519; rejects others | ✅ | `devices.test.ts` |
+| Web player uses the native bridge when present (no key material in the page) | ✅ | player e2e: second tablet through a simulated bridge enrolls, signs and plays |
+| CI job: Android build, unit tests, lint, debug APK artifact | ✅ written | not yet run on GitHub |
+
+Fixed during e2e: the heartbeat overwrote the shell's app version with the web version.
+
+Test totals: finance-core 28, API 154, Android unit tests (UrlPolicy, BridgeProtocol), browser e2e: tablet ride (web key + simulated Android key) and rider app.
+
 ### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
-1. Android kiosk shell around the web player + CI build (field test needs one device and D-017).
-2. Upgraded business web portals (advertiser, creator, driver, fleet, staff).
+1. Upgraded business web portals (advertiser, creator, driver, fleet, staff).
+2. Android field test on one tablet with the chosen EMM; add key attestation at enrollment (R-028).
 3. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).

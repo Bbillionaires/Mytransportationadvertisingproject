@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<restrictions xmlns:android="http://schemas.android.com/apk/res/android">
+    <restriction android:key="server_url" android:restrictionType="string" android:title="@string/restriction_server_url_title" android:description="@string/restriction_server_url_desc" android:defaultValue="" />
+    <restriction android:key="kiosk_enabled" android:restrictionType="bool" android:title="@string/restriction_kiosk_title" android:description="@string/restriction_kiosk_desc" android:defaultValue="true" />
+</restrictions>

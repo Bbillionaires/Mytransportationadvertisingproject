@@ -79,17 +79,23 @@ export function verifyTotp(secretB32: string, code: string, nowMs = Date.now()):
   return null;
 }
 
-// ---------- Ed25519 device signatures ----------
-export function parseEd25519PublicKey(derB64: string): Buffer {
+// ---------- Device signatures: Ed25519 (web player) or ECDSA P-256 (Android Keystore / StrongBox) ----------
+/** Accepts an SPKI public key that is Ed25519 or ECDSA on P-256; anything else is refused. */
+export function parseDevicePublicKey(derB64: string): Buffer {
   const der = Buffer.from(derB64, 'base64');
   const key = createPublicKey({ key: der, format: 'der', type: 'spki' });
-  if (key.asymmetricKeyType !== 'ed25519') throw new Error('device key must be Ed25519');
+  const ok = key.asymmetricKeyType === 'ed25519' || (key.asymmetricKeyType === 'ec' && key.asymmetricKeyDetails?.namedCurve === 'prime256v1');
+  if (!ok) throw new Error('device key must be Ed25519 or ECDSA P-256');
   return der;
 }
-export function verifyEd25519(der: Buffer, data: Buffer, signatureB64: string): boolean {
+/** Ed25519 signs the payload directly; P-256 uses SHA-256 with a DER-encoded ECDSA signature (Android's SHA256withECDSA). */
+export function verifyDeviceSignature(der: Buffer, data: Buffer, signatureB64: string): boolean {
   try {
     const key = createPublicKey({ key: der, format: 'der', type: 'spki' });
-    return edVerify(null, data, key, Buffer.from(signatureB64, 'base64'));
+    const sig = Buffer.from(signatureB64, 'base64');
+    if (key.asymmetricKeyType === 'ed25519') return edVerify(null, data, key, sig);
+    if (key.asymmetricKeyType === 'ec') return edVerify('sha256', data, key, sig);
+    return false;
   } catch {
     return false;
   }

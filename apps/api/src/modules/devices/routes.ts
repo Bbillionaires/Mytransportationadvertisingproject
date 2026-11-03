@@ -4,7 +4,7 @@ import type { Config } from '../../config.js';
 import type { Db } from '../../db/pool.js';
 import { withTx } from '../../db/pool.js';
 import { audit } from '../../lib/audit.js';
-import { deviceSigningPayload, parseEd25519PublicKey, randomToken, sha256hex, verifyEd25519 } from '../../lib/crypto.js';
+import { deviceSigningPayload, parseDevicePublicKey, randomToken, sha256hex, verifyDeviceSignature } from '../../lib/crypto.js';
 import { badRequest, conflict, notFound, unauthorized } from '../../lib/errors.js';
 import { parse, uuid } from '../../lib/validation.js';
 import { actorOf, authorize } from '../../auth/context.js';
@@ -29,7 +29,7 @@ export async function authenticateDevice(db: Db, config: Config, req: FastifyReq
   const dev = d.rows[0];
   if (!dev || dev.status === 'RETIRED') throw unauthorized('unknown device');
   const path = req.url.split('?')[0]!;
-  if (!verifyEd25519(dev.public_key_der, deviceSigningPayload(req.method, path, ts, nonce, req.rawBody ?? ''), sig)) throw unauthorized('bad device signature');
+  if (!verifyDeviceSignature(dev.public_key_der, deviceSigningPayload(req.method, path, ts, nonce, req.rawBody ?? ''), sig)) throw unauthorized('bad device signature');
   const n = await db.query('INSERT INTO device_nonces (device_id, nonce) VALUES ($1,$2) ON CONFLICT DO NOTHING', [id, nonce]);
   if (n.rowCount !== 1) throw unauthorized('replayed request');
   return { deviceId: dev.id as string, orgId: dev.org_id as string, status: dev.status as 'ACTIVE' | 'SUSPENDED', deviceTime: new Date(Number(ts) * 1000) };
@@ -129,7 +129,7 @@ export async function deviceRoutes(app: FastifyInstance, { db, config }: { db: D
       appVersion: z.string().max(50), osVersion: z.string().max(100).optional(),
     }), req.body);
     let der: Buffer;
-    try { der = parseEd25519PublicKey(b.publicKey); } catch { throw badRequest('publicKey must be a base64 DER SPKI Ed25519 key'); }
+    try { der = parseDevicePublicKey(b.publicKey); } catch { throw badRequest('publicKey must be a base64 DER SPKI Ed25519 or ECDSA P-256 key'); }
     const out = await withTx(db, async (tx) => {
       const c = await tx.query(`SELECT id, org_id, label FROM device_enrollment_codes WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now() FOR UPDATE`, [sha256hex(b.code)]);
       if (!c.rows[0]) throw unauthorized('invalid or expired enrollment code');

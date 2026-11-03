@@ -92,15 +92,15 @@ export class FakeTablet {
   readonly privateKey: KeyObject;
   readonly publicKeyB64: string;
   deviceId?: string;
-  constructor(readonly app: FastifyInstance, readonly serial = `SN-${uid()}`) {
-    const kp = generateKeyPairSync('ed25519');
+  constructor(readonly app: FastifyInstance, readonly serial = `SN-${uid()}`, readonly alg: 'ed25519' | 'p256' = 'ed25519') {
+    const kp = alg === 'p256' ? generateKeyPairSync('ec', { namedCurve: 'prime256v1' }) : generateKeyPairSync('ed25519');
     this.privateKey = kp.privateKey;
     this.publicKeyB64 = kp.publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
   }
   signedHeaders(method: string, path: string, body: string, over: { ts?: number; nonce?: string } = {}) {
     const ts = String(over.ts ?? Math.floor(Date.now() / 1000));
     const nonce = over.nonce ?? randomToken(16);
-    const sig = sign(null, deviceSigningPayload(method, path, ts, nonce, body), this.privateKey).toString('base64');
+    const sig = sign(this.alg === 'p256' ? 'sha256' : null, deviceSigningPayload(method, path, ts, nonce, body), this.privateKey).toString('base64');
     return { 'content-type': 'application/json', 'x-device-id': this.deviceId!, 'x-device-timestamp': ts, 'x-device-nonce': nonce, 'x-device-signature': sig };
   }
   async call(method: 'POST' | 'GET', path: string, payload?: object, over: { ts?: number; nonce?: string } = {}) {

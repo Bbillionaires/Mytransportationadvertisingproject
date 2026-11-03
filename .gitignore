@@ -8,3 +8,12 @@ coverage/
 var/
 *.log
 .DS_Store
+# Android
+apps/android/.gradle/
+apps/android/**/build/
+apps/android/local.properties
+apps/android/.idea/
+*.apk
+*.aab
+*.jks
+*.keystore

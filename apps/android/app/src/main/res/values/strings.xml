@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Ride Screen</string>
+    <string name="restriction_server_url_title">Server URL</string>
+    <string name="restriction_server_url_desc">HTTPS origin of the Rideshare Media Network API (e.g. https://rides.example.com)</string>
+    <string name="restriction_kiosk_title">Kiosk mode</string>
+    <string name="restriction_kiosk_desc">Lock the tablet to the player when the app is allow-listed for lock task mode</string>
+</resources>

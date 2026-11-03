@@ -9,6 +9,7 @@ A passenger-facing tablet entertainment and advertising network for rideshare, t
 packages/finance-core/   Pure, exact-integer financial engine (waterfall, splits, pools, reversals) + property tests
 apps/player/             Passenger tablet web player (TypeScript, esbuild) + browser e2e test
 apps/rider/              Rider phone web app (installable PWA) + browser e2e test
+apps/android/            Android kiosk shell around the web player (Kotlin, Keystore device key) — see docs/ANDROID_SHELL.md
 apps/api/                Fastify API: identity, RBAC/tenancy, fleets, devices, ledger, revenue rules, allocations
   migrations/            Forward-only SQL; ledger invariants enforced by the database
   public/index.html      Admin console shell
@@ -30,8 +31,9 @@ npm run dev                                         # admin: http://127.0.0.1:80
 ## Tests
 ```bash
 npm run typecheck
-npm test            # 28 finance-core tests (incl. property tests) + 153 API tests (media tests need ffmpeg)
-npm run e2e         # browser end-to-end: tablet player ride + rider phone app (Playwright + ffmpeg)
+npm test            # 28 finance-core tests (incl. property tests) + 154 API tests (media tests need ffmpeg)
+npm run e2e         # browser end-to-end: tablet player ride (web key + simulated Android key) + rider phone app
+(cd apps/android && ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug)   # needs ANDROID_HOME
 ```
 The API tests reset the schema of `TEST_DATABASE_URL` (default `postgres://rmn:rmn@localhost:5432/rmn_test`).
 

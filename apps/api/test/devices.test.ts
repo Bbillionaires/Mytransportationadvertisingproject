@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { FakeTablet, org, setupApp, userWithRole, type Ctx } from './helpers.js';
 
@@ -54,6 +55,20 @@ describe('device enrollment and signed requests', () => {
     expect((await impostor.call('POST', '/v1/devices/heartbeat', { appVersion: '1' })).statusCode).toBe(401);
 
     expect((await t.call('POST', '/v1/devices/heartbeat', { appVersion: '1' }, { ts: Math.floor(Date.now() / 1000) - 3600 })).json().error.message).toMatch(/skew/);
+  });
+
+  it('accepts hardware-backed ECDSA P-256 tablet keys (Android Keystore) and refuses other key types', async () => {
+    const code = (await ctx.app.inject({ method: 'POST', url: `/v1/orgs/${orgId}/devices/enrollment-codes`, headers: admin.h, payload: {} })).json().code;
+    const t = new FakeTablet(ctx.app, undefined, 'p256');
+    const r = await ctx.app.inject({ method: 'POST', url: '/v1/devices/enroll', payload: { code, serial: t.serial, publicKey: t.publicKeyB64, appVersion: 'android-shell' } });
+    expect(r.statusCode).toBe(201);
+    t.deviceId = r.json().deviceId;
+    expect((await t.call('POST', '/v1/devices/heartbeat', { appVersion: 'android-shell' })).statusCode).toBe(200);
+    const impostor = new FakeTablet(ctx.app, undefined, 'p256'); impostor.deviceId = t.deviceId;
+    expect((await impostor.call('POST', '/v1/devices/heartbeat', { appVersion: 'x' })).statusCode).toBe(401);
+    const rsa = generateKeyPairSync('rsa', { modulusLength: 2048 }).publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
+    const code2 = (await ctx.app.inject({ method: 'POST', url: `/v1/orgs/${orgId}/devices/enrollment-codes`, headers: admin.h, payload: {} })).json().code;
+    expect((await ctx.app.inject({ method: 'POST', url: '/v1/devices/enroll', payload: { code: code2, serial: `SN-RSA-${t.serial}`, publicKey: rsa, appVersion: 'x' } })).statusCode).toBe(400);
   });
 
   it('remote suspend stops playback and commands are delivered then acknowledged', async () => {

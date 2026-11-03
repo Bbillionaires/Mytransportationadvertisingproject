@@ -51,6 +51,38 @@ function makeVideo(seconds: number, color: string): string {
   return id;
 }
 
+/**
+ * Stand-in for the Android shell's WebMessage bridge (apps/android BridgeProtocol): same JSON protocol, same payload
+ * allow-list, ECDSA P-256 with DER signatures like the Keystore. The key is non-extractable inside the fake "native" side.
+ */
+const FAKE_ANDROID_BRIDGE = `(() => {
+  const keyP = crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify']);
+  const b64 = (u) => btoa(String.fromCharCode(...new Uint8Array(u)));
+  const PATTERN = /^(GET|POST)\\n\\/v1\\/devices\\/[A-Za-z0-9\\/_-]{1,200}\\n\\d{9,12}\\n[A-Za-z0-9_-]{16,64}\\n[0-9a-f]{64}$/;
+  const der = (raw) => { // WebCrypto gives r||s; Android Keystore gives ASN.1 DER
+    const int = (b) => { let i = 0; while (i < b.length - 1 && b[i] === 0) i++; b = b.slice(i); return b[0] & 0x80 ? [0, ...b] : [...b]; };
+    const r = int(raw.slice(0, 32)), s = int(raw.slice(32));
+    return new Uint8Array([0x30, r.length + s.length + 4, 0x02, r.length, ...r, 0x02, s.length, ...s]);
+  };
+  window.__bridgeSignCalls = 0;
+  const bridge = { onmessage: null, postMessage: async (msg) => {
+    const m = JSON.parse(msg); let reply;
+    try {
+      const kp = await keyP;
+      if (m.op === 'info') reply = { id: m.id, ok: true, result: { algorithm: 'ECDSA_P256', serial: 'AND-e2e0000001', hardwareBacked: false, shellVersion: '0.1.0',
+        publicKey: b64(await crypto.subtle.exportKey('spki', kp.publicKey)) } };
+      else if (m.op === 'sign') {
+        const data = Uint8Array.from(atob(m.data), (c) => c.charCodeAt(0));
+        if (data.length > 512 || !PATTERN.test(new TextDecoder().decode(data))) throw new Error('refused');
+        window.__bridgeSignCalls++;
+        reply = { id: m.id, ok: true, result: { signature: b64(der(new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, kp.privateKey, data)))) } };
+      } else throw new Error('unknown op');
+    } catch (e) { reply = { id: m.id, ok: false, error: String(e.message) }; }
+    setTimeout(() => bridge.onmessage && bridge.onmessage({ data: JSON.stringify(reply) }), 0);
+  } };
+  window.RMNDevice = bridge;
+})();`;
+
 async function main() {
   console.log('player e2e');
   await resetDb();
@@ -210,6 +242,29 @@ async function main() {
     const bad = ev.filter((e) => e.status !== 'VALID' && !expectedInvalid(e));
     assert.deepEqual(bad, [], 'no unexpected invalid events');
     assert.deepEqual(problems, [], 'no page errors or CSP violations');
+
+    step('Android shell: a tablet whose key lives in the native bridge (simulated Keystore ECDSA P-256) enrolls and plays');
+    const { code: code2 } = await api('POST', `/v1/orgs/${fleetOrg}/devices/enrollment-codes`, {}, fleetAdmin.h);
+    const vehicle2 = (await q(`INSERT INTO vehicles (org_id, fleet_id, label) VALUES ($1,$2,'UNIT-2') RETURNING id`, [fleetOrg, fleet]))[0].id;
+    const shellCtx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await shellCtx.addInitScript(FAKE_ANDROID_BRIDGE);
+    const shell = await shellCtx.newPage();
+    shell.on('pageerror', (e) => problems.push(`shell pageerror: ${e.message}`));
+    await shell.goto(`${BASE}/player/?fast=1`);
+    await shell.fill('#code', code2);
+    await shell.click('#setup-form button');
+    await shell.waitForSelector('#idle:has-text("Waiting for vehicle assignment")', { timeout: 15_000 });
+    const [andDev] = await q(`SELECT id, app_version, public_key_der FROM devices WHERE serial LIKE 'AND-%'`);
+    assert.match(andDev.app_version, /\+android-/);
+    assert.ok((await import('node:crypto')).createPublicKey({ key: andDev.public_key_der, format: 'der', type: 'spki' }).asymmetricKeyType === 'ec', 'device key is ECDSA');
+    const signCalls = await shell.evaluate(() => (window as any).__bridgeSignCalls as number);
+    assert.ok(signCalls > 0, 'requests signed through the native bridge');
+    assert.equal(await shell.evaluate(() => new Promise((res) => { const r = indexedDB.open('rmn-player'); r.onsuccess = () => { const g = r.result.transaction('kv').objectStore('kv').get('keys'); g.onsuccess = () => res(g.result); }; })), 'native', 'no key material in the web page');
+    await api('POST', `/v1/orgs/${fleetOrg}/devices/${andDev.id}/assignments`, { vehicleId: vehicle2 }, fleetAdmin.h);
+    await api('POST', `/v1/orgs/${fleetOrg}/devices/${andDev.id}/commands`, { command: 'REFRESH_PLAYBACK' }, fleetAdmin.h);
+    await shell.waitForSelector('#now:not(:empty)', { timeout: 20_000 });
+    assert.deepEqual(problems, [], 'no page errors in the shell page');
+    await shellCtx.close();
     console.log(`  ✓ player e2e passed (${ev.length} events validated; screenshots in ${SHOTS})`);
   } finally {
     await page.screenshot({ path: path.join(SHOTS, 'player-final.png') }).catch(() => {});
