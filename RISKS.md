@@ -1,0 +1,24 @@
+# Risk Register
+
+Severity: H/M/L. Owner: who must act. Items are marked **open** until the mitigation is verified.
+
+| ID | Risk | Sev | Mitigation / status |
+|---|---|---|---|
+| R-001 | **Money transmission / marketplace licensing.** Collecting advertiser funds and paying creators and drivers may be regulated money transmission in some jurisdictions. | H | Use a licensed marketplace payout provider (D-026) so funds flow under their licenses; legal review before go-live. **Open.** |
+| R-002 | **Database owner can bypass triggers.** Ledger immutability is trigger-based; the table owner or a superuser can disable triggers. | H | Production must run the app as a least-privileged role that does not own tables (no DDL, no `ALTER TABLE ... DISABLE TRIGGER`). Migrations run as a separate owner role. Add PITR backups and periodic hash-chain verification. **Open** (deployment guide documents it; not yet automated). |
+| R-003 | **Tenant isolation is enforced in application code** (plus composite FKs), not Postgres RLS. | M | Composite `(id, org_id)` foreign keys prevent cross-tenant references in the DB; cross-tenant tests in `tenancy.test.ts`. Plan: add RLS on tenant tables in Phase 6. **Open.** |
+| R-004 | **Android tablet app not built or verified.** No Android SDK in the build environment; kiosk-mode behavior varies by OEM and EMM. | H | Phase 2 milestone with real-device testing; the device API contract (enroll, signed heartbeat, commands) is implemented and tested with a simulated tablet. **Open.** |
+| R-005 | **Driver distraction / road safety.** Passenger screens or proximity alerts could distract drivers. | H | Rear-seat mounting only, no audio prompts by default, no driver-facing alerts, geofence alerts shown only on the passenger tablet. Safety review before pilot. **Open.** |
+| R-006 | **Children's privacy (COPPA and similar).** Passengers may be minors. | H | Guest mode collects no personal data; rider accounts restricted until counsel review (D-018). **Open.** |
+| R-007 | **Gambling / sweepstakes law.** Jackpot-style games or random prizes. | H | Disabled (D-019). **Open.** |
+| R-008 | **Content rights / DMCA.** Creator uploads may infringe; YouTube content must not be ingested without authorization. | H | Phase 2: rights attestations, takedown/appeal workflow, AI-assisted moderation with human review; fail-closed to HOLD. **Open.** |
+| R-009 | **Invalid traffic / impression fraud** inflating payouts. | H | Phase 2: signed devices (done), nonce replay protection (done), validated vs. raw event separation, anti-idle heuristics, review holds. **Partially mitigated.** |
+| R-010 | **Tax reporting** (1099-NEC/K, W-9/W-8 collection, sales tax). | M | Payout provider handling + tax advisor (D-016). **Open.** |
+| R-011 | **Accounting treatment** (gross vs. net presentation, revenue recognition timing). | M | D-011; ledger keeps gross detail so reports can be restated. **Open.** |
+| R-012 | **Audit log throughput.** The hash chain serializes inserts with an advisory lock. | L | Adequate for admin and financial actions. High-volume telemetry must go to a separate event store, not the audit log. Revisit (per-tenant chains or batch anchoring) at scale. |
+| R-013 | **Allocation grain unresolved** (D-014), which changes creator/driver outcomes. | M | Per-batch default; must be fixed before live payouts. **Open.** |
+| R-014 | **Seeded rule approvals are synthetic.** | M | Seed refuses to run when `NODE_ENV=production`; production rules must be drafted and approved by real, MFA-verified people. |
+| R-015 | **No external penetration test or load test yet.** | M | Required in Phase 6 before scale. **Open.** |
+| R-016 | **Secrets management.** `APP_ENCRYPTION_KEY` comes from an env var. | M | Use a cloud secret manager/KMS in production; no key rotation tooling yet. **Open.** |
+| R-017 | **Earnings expectations.** Drivers pay $30/month with no earnings guarantee; poor disclosure invites complaints and regulatory risk. | M | Transparent cancellation; estimate vs. approved earnings shown separately; no guarantee language anywhere (Phase 3–4 UI copy review). **Open.** |
+| R-018 | **Location privacy** for geofenced promotions. | M | Phase 5: on-device geofence evaluation where feasible, minimal retention, no trip history exposure. **Open.** |

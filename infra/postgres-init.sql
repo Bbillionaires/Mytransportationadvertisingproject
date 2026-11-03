@@ -1,0 +1,1 @@
+CREATE DATABASE rmn_test OWNER rmn;
