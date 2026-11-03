@@ -19,7 +19,7 @@
 </head>
 <body>
 <header><h1>Rideshare Media Network · Admin</h1><span class="tag">Phase 1 shell — server enforces every permission</span>
-  <nav id="nav" hidden><button data-v="me">Me</button> <button data-v="orgs">Organizations</button> <button data-v="tb">Trial balance</button> <button data-v="rules">Revenue rules</button> <button data-v="audit">Audit log</button> <button data-v="campaigns">Campaigns</button> <button data-v="review">Review queue</button> <button id="logout">Sign out</button></nav>
+  <nav id="nav" hidden><button data-v="me">Me</button> <button data-v="orgs">Organizations</button> <button data-v="tb">Trial balance</button> <button data-v="rules">Revenue rules</button> <button data-v="audit">Audit log</button> <button data-v="campaigns">Campaigns</button> <button data-v="review">Review queue</button> <button data-v="earnings">Earnings</button> <button data-v="reports">Reports</button> <button id="logout">Sign out</button></nav>
 </header>
 <main>
   <section class="card" id="login">
@@ -71,6 +71,34 @@ const views = {
       table(c.creatives, [['Creative', 'name'], ['Kind', 'kind'], ['Headline', 'headline'], ['Media', 'mediaKey'], ['Status', 'status']]) +
       `<p><button data-approve="${esc(c.id)}">Approve campaign and all pending creatives</button> <button data-reject="${esc(c.id)}">Reject…</button></p></div>`).join('');
   },
+  async earnings() {
+    const m = await api('/v1/me');
+    const studios = m.memberships.filter((x) => x.orgKind === 'CREATOR_STUDIO');
+    const isDriver = m.memberships.some((x) => x.role === 'driver');
+    if (!studios.length && !isDriver) return '<h2>Earnings</h2><p class="tag">Earnings are shown to creators and drivers.</p>';
+    const month = new Date().toISOString().slice(0, 7);
+    const block = (title, e, stmtUrl) => `<h2>${esc(title)}</h2>` +
+      table([{ k: 'Earned (allocated)', v: e.summary.earned }, { k: 'Refund/chargeback reductions', v: e.summary.reversed }, { k: 'Net', v: e.summary.net },
+             { k: 'Balance owed to you', v: e.summary.payableBalance }, { k: 'Owed back after payouts', v: e.summary.owedBackClawback },
+             { k: 'Indicative estimate, not yet allocated', v: e.estimate.estimatedShare }], [['', 'k'], ['USD', 'v', cents]]) +
+      `<p class="tag">${esc(e.disclosure)}</p><p><a href="#" data-dl="${esc(stmtUrl)}?format=pdf">Download ${esc(month)} statement (PDF)</a> · <a href="#" data-dl="${esc(stmtUrl)}?format=csv">CSV</a></p>` +
+      table(e.lines.slice(0, 50).map((l) => ({ ...l, gross: l.batch.gross, net: l.batch.net })), [['Allocated', 'allocatedAt'], ['Category', 'category'], ['Source', 'sourceRef'], ['Batch gross', 'gross', cents], ['Batch net', 'net', cents], ['Your share', 'amount', cents], ['Reversed', 'reversed', cents], ['Status', 'status']]);
+    let out = '';
+    for (const s of studios) out += block('Creator earnings', await api(`/v1/orgs/${s.orgId}/earnings`), `/v1/orgs/${s.orgId}/statements/${month}`);
+    if (isDriver) out += block('Driver earnings', await api('/v1/drivers/me/earnings'), `/v1/drivers/me/statements/${month}`);
+    return out;
+  },
+  async reports() {
+    const year = new Date().getUTCFullYear();
+    const [is, bs] = await Promise.all([api(`/v1/finance/reports/income-statement?from=${year}-01-01`), api('/v1/finance/reports/balance-sheet')]);
+    const usdIs = is.currencies.USD, usdBs = bs.currencies.USD;
+    if (!usdIs || !usdBs) return '<h2>Reports</h2><p class="tag">No USD activity yet.</p>';
+    return `<h2>Income statement ${year} (USD)</h2><p class="tag">${esc(is.presentation)}</p>` +
+      table([...usdIs.revenue, ...usdIs.expenses.map((x) => ({ ...x, name: x.name + ' (expense)' })), { account: '', name: 'Net income', amount: usdIs.netIncome }], [['Account', 'account'], ['Name', 'name'], ['Amount', 'amount', cents]]) +
+      `<h2>Balance sheet <span class="${usdBs.balanced ? 'ok' : 'err'}">${usdBs.balanced ? 'balanced' : 'NOT BALANCED'}</span></h2>` +
+      table([...usdBs.assets, ...usdBs.liabilities, ...usdBs.equity], [['Account', 'account'], ['Name', 'name'], ['Amount', 'amount', cents]]) +
+      `<p>Exports: ${['general-ledger', 'income-statement', 'balance-sheet', 'cash-flow', 'liabilities', 'receivables'].map((r) => `<a href="#" data-dl="/v1/finance/reports/${r}?format=csv&from=${year}-01-01">${r}</a>`).join(' · ')} · <a href="#" data-dl="/v1/finance/reports/recipient-earnings?format=csv&year=${year}">recipient-earnings</a></p>`;
+  },
   async audit() { const a = await api('/v1/audit?limit=100'); return '<h2>Audit log (latest 100)</h2>' + table(a.items, [['#', 'id'], ['When', 'occurred_at'], ['Action', 'action'], ['Target', 'target_type'], ['Target ID', 'target_id'], ['Actor', 'actor_user_id']]); },
 };
 async function show(v) {
@@ -87,6 +115,21 @@ $('#lf').onsubmit = async (e) => { e.preventDefault(); $('#lmsg').textContent = 
 $('#mf').onsubmit = async (e) => { e.preventDefault();
   try { await api('/v1/auth/mfa/verify', { method: 'POST', body: JSON.stringify({ code: $('#code').value }) }); signedIn(); } catch (err) { $('#lmsg').textContent = err.message; } };
 $('#nav').onclick = (e) => { if (e.target.dataset.v) show(e.target.dataset.v); };
+$('#view').addEventListener('click', async (e) => {
+  const url = e.target.dataset && e.target.dataset.dl;
+  if (!url) return;
+  e.preventDefault();
+  try {
+    const r = await fetch(url, { headers: { authorization: 'Bearer ' + token } });
+    if (!r.ok) throw new Error(r.statusText);
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (r.headers.get('content-disposition') || '').split('filename="')[1]?.replace('"', '') || 'download';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (err) { alert(err.message); }
+});
 $('#view').onclick = async (e) => {
   const approve = e.target.dataset.approve, reject = e.target.dataset.reject;
   if (!approve && !reject) return;

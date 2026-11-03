@@ -174,9 +174,21 @@ Test totals: finance-core 28, API 104.
 
 Test totals: finance-core 28, API 118.
 
+## 2026-11-03 — Session 9: earnings dashboards, statements and financial reports (M4.4, M3.6) ✅
+
+| Item | Status | Evidence |
+|---|---|---|
+| Creator earnings: summary, by category, ledger balances, drill-down (gross → deductions → net → split → basis → share → reversed), indicative estimates, disclosure | ✅ | `reports.test.ts` |
+| Video performance ranking (qualified views, watch hours, monetized revenue, clicks, conversions, status) | ✅ | `reports.test.ts` |
+| Driver earnings: same plus tablets, subscription, eligibility, conversions | ✅ | `reports.test.ts` |
+| Monthly statements (JSON, CSV, PDF with verified xref) for creators, drivers, and finance for any recipient | ✅ | `reports.test.ts` |
+| GL with running balances, income statement, balance sheet (A = L + E check), cash flow, liabilities, receivables aging, recipient earnings; CSV exports with formula-injection protection | ✅ | `reports.test.ts` |
+| Console: Earnings view (creators/drivers) with statement downloads; Reports view (finance) | ✅ | Earnings view and PDF download browser-checked at 390 px |
+
+Test totals: finance-core 28, API 127.
+
 ### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
-1. M4.4 Creator and driver earnings dashboards and statements; M3.6 financial reports (GL, P&L, balance sheet, cash flow, CSV/PDF).
-2. Phase 1 remainder: email verification, invitations/password reset, unlock, support impersonation endpoints, metrics.
-3. Phase 5 rider engagement: rider accounts and QR sign-in, coupons wallet, geofenced alerts, skill games, reward accounting.
-4. M2.5 Android player (needs a real device and D-017).
-5. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).
+1. Phase 1 remainder: email verification, invitations/password reset, unlock, support impersonation endpoints, metrics.
+2. Phase 5 rider engagement: rider accounts and QR sign-in, coupons wallet, geofenced alerts, skill games, reward accounting.
+3. M2.5 Android player (needs a real device and D-017).
+4. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).

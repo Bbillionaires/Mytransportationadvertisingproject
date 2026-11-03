@@ -20,6 +20,7 @@ import { playlistRoutes } from './modules/campaigns/playlist.js';
 import { mediaRoutes } from './modules/media/routes.js';
 import { paymentRoutes } from './modules/payments/routes.js';
 import { commissionRoutes } from './modules/commissions/routes.js';
+import { reportRoutes } from './modules/reports/routes.js';
 import type { PaymentProvider } from './modules/payments/provider.js';
 import { StripeProvider } from './modules/payments/stripe.js';
 import { FakePaymentProvider } from './modules/payments/fake.js';
@@ -95,6 +96,7 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
   await app.register(mediaRoutes, { db, config });
   await app.register(paymentRoutes, { db, config, provider });
   await app.register(commissionRoutes, { db, config });
+  await app.register(reportRoutes, { db });
 
   // The admin shell is a single static page; all data comes from the permission-checked API.
   const adminHtml = await readFile(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/index.html'), 'utf8');

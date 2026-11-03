@@ -32,13 +32,13 @@ Each milestone is done only when its criteria pass in CI against PostgreSQL. It 
 - 🟡 **M3.3 Invoices and advertiser prepayments** (session 7: prepayments, receipts, credit notes, subscription invoices; commission invoicing and tax engine remain) with tax lines (2100).
 - ✅ **M3.4 Refunds/chargebacks → allocation reversals** (session 3) via `proportionalReversal`; clawback receivable for paid shares. *AC:* invariant 9.
 - ✅ **M3.5 Reconciliation runs** (session 7) and exception queue; period-close checklist.
-- **M3.6 Reports:** GL, trial balance, P&L, balance sheet, cash flow, receivables, liabilities, CSV/PDF.
+- ✅ **M3.6 Reports** (session 9): GL, trial balance, P&L, balance sheet, cash flow, receivables, liabilities, CSV/PDF.
 
 ## Phase 4 — Monetization
 - 🟡 **M4.1 Scheduled allocation batches** (session 6: scheduled windows from validated events; per-advertiser fee schedules remain) from validated aggregates (no caller-supplied metrics).
 - ✅ **M4.2 Attribution** (session 8; commission invoicing/collection deferred to the final Stripe phase): clicks, unique QR/coupon codes, conversion API, windows, dedupe, disputes.
 - **M4.3 Payout onboarding** (Stripe Connect or chosen provider, D-026), payout batches with dual approval. *AC:* invariant 10 (payout ≤ approved payable; concurrent payouts can't overdraw).
-- **M4.4 Creator and driver dashboards and statements:** gross → deductions → net → allocation → adjustments → pending/approved/paid with drill-down.
+- ✅ **M4.4 Creator and driver dashboards and statements** (session 9; payouts column fills in with M4.3): gross → deductions → net → allocation → adjustments → pending/approved/paid with drill-down.
 
 ## Phase 5 — Rider engagement
 QR sign-in with short-lived tokens; auto-logout and purge (invariant 11); coupons and redemption; geofence alerts; skill games; reward liability accounting. Chance-based features stay off until legal sign-off.
