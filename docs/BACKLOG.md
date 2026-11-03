@@ -35,7 +35,7 @@ Each milestone is done only when its criteria pass in CI against PostgreSQL. It 
 - **M3.6 Reports:** GL, trial balance, P&L, balance sheet, cash flow, receivables, liabilities, CSV/PDF.
 
 ## Phase 4 — Monetization
-- **M4.1 Scheduled allocation batches** from validated aggregates (no caller-supplied metrics).
+- 🟡 **M4.1 Scheduled allocation batches** (session 6: scheduled windows from validated events; per-advertiser fee schedules remain) from validated aggregates (no caller-supplied metrics).
 - **M4.2 Attribution:** clicks, unique QR/coupon codes, conversion API, windows, dedupe, disputes.
 - **M4.3 Payout onboarding** (Stripe Connect or chosen provider, D-026), payout batches with dual approval. *AC:* invariant 10 (payout ≤ approved payable; concurrent payouts can't overdraw).
 - **M4.4 Creator and driver dashboards and statements:** gross → deductions → net → allocation → adjustments → pending/approved/paid with drill-down.

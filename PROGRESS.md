@@ -128,8 +128,22 @@ Test totals: finance-core 28, API 72 (all passing).
 
 Test totals: finance-core 28, API 84 (all passing).
 
+## 2026-11-03 — Session 6: budgets, funds reservation and scheduled allocation ✅
+
+| Item | Status | Evidence |
+|---|---|---|
+| Total and daily (campaign-local) budgets; editable while live, positive only | ✅ | `budgets.test.ts` |
+| Exact spend tracking in 1/1000 cent (CPM and CPQV) | ✅ | `budgets.test.ts` |
+| Unbilled spend reserved against prepaid balance across all of an advertiser's campaigns | ✅ | `budgets.test.ts` |
+| Playlist stops serving and validator stops billing at the same limit (BUDGET_EXHAUSTED, DAILY_BUDGET_EXHAUSTED, ADVERTISER_FUNDS_EXHAUSTED) | ✅ | `budgets.test.ts` |
+| Advertiser spend endpoint; balance shows committed and available funds | ✅ | `budgets.test.ts` |
+| Scheduled allocation windows (job + endpoint), idempotent, skip-and-report when blocked, system identity | ✅ | `budgets.test.ts` |
+| Per-campaign spend counters / cached delivery state for scale (R-024) | ⬜ | |
+
+R-020 (overspend between allocations) is mitigated. Test totals: finance-core 28, API 91.
+
 ### Next steps (in order)
-1. Per-campaign budgets with live spend estimate (R-020), then scheduled hourly allocation windows (no manual triggering).
-2. Phase 1 remainder: email verification, invitations/password reset, unlock, impersonation endpoints, metrics.
-3. Phase 3: Stripe **test-mode** Billing, webhook inbox, invoices, reconciliation, reports.
+1. Phase 3 (test mode): Stripe Billing for the $30 driver subscription and advertiser prepayments, signed idempotent webhook inbox, invoices, reconciliation runs.
+2. Phase 4: payouts to creators/drivers (dual-approved batches, payout ≤ payable), statements and dashboards.
+3. Phase 1 remainder: email verification, invitations/password reset, unlock, impersonation endpoints, metrics.
 4. M2.5 Android player: needs a real device and the hardware/EMM decision (D-017).

@@ -143,6 +143,14 @@ Campaign fields: `category`, `pricingModel` (CPM \| CPQV), `rateMinor`, `startsA
 
 Ad creatives (`POST /v1/orgs/:orgId/campaigns/:id/creatives`) now take `uploadId` for VIDEO/DISPLAY; `durationMs` and the media key come from the processed asset.
 
+### Budgets and scheduled allocation (session 6)
+| Method | Path | Auth |
+|---|---|---|
+| POST/PATCH | `/v1/orgs/:orgId/campaigns[/:id]` | adds `totalBudgetMinor`, `dailyBudgetMinor` (nullable; editable while live) |
+| GET | `/v1/orgs/:orgId/campaigns/:id/spend` | `campaign.read` → `spent`, `spentToday`, `unbilled`, `remainingBudget`, `deliveryBlockedBy` |
+| GET | `/v1/orgs/:orgId/balance` | now also `committedUnbilled` and `available` |
+| POST | `/v1/finance/allocation-windows/run` | `finance.allocation.post` → per-campaign ALLOCATED/SKIPPED with reasons |
+
 ## Planned (Phase 2–6, contracts to be versioned when built)
 - Media: creator playlists/series, object-store adapter, virus scanning.
 - Campaigns: geofences and per-campaign budgets.

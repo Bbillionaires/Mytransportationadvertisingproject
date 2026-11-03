@@ -8,6 +8,7 @@ import { conflict } from '../../lib/errors.js';
 import { idemKey, isoDate, minor, parse, uuid } from '../../lib/validation.js';
 import { actorOf, authorize } from '../../auth/context.js';
 import { runValidation } from './validator.js';
+import { runScheduledAllocations } from './scheduler.js';
 import { campaignMetrics, postWindow, previewWindow, type WindowInput } from './aggregate.js';
 
 const windowSchema = z.object({
@@ -70,6 +71,14 @@ export async function eventRoutes(app: FastifyInstance, { db, config }: { db: Db
     const { campaignId } = parse(z.object({ campaignId: uuid }), req.params);
     const b = parse(windowSchema, req.body);
     return previewWindow(db, { ...b, campaignId } as WindowInput);
+  });
+
+  /** Trigger the scheduled allocation run now (normally hourly by the job runner). Recorded as the calling user. */
+  app.post('/v1/finance/allocation-windows/run', async (req) => {
+    const auth = await authorize(db, req, 'finance.allocation.post');
+    const r = await runScheduledAllocations(db, config, { actorUserId: auth.userId });
+    await audit(db, actorOf(req), 'finance.scheduled_allocation_run', { type: 'scheduler' }, { allocated: r.allocated, skipped: r.skipped, cutoff: r.cutoff });
+    return r;
   });
 
   /** Allocate a campaign window from validated events only. Windows can never overlap (DB exclusion). */

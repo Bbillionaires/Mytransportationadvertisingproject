@@ -44,6 +44,8 @@ These definitions drive billing and payouts. They are **DECISION REQUIRED (D-027
 
 Campaign terms (session 4): `OUTSIDE_SCHEDULE` (outside the campaign's daypart in its time zone), `MARKET_NOT_TARGETED` (the tablet's fleet market is not targeted), and `FREQUENCY_CAP_EXCEEDED` (more qualified views on one tablet in a rolling hour than the advertiser's cap) are also INVALID, so advertisers never pay for delivery outside their terms.
 
+Budgets and funds (session 6): a billable play (qualified view for CPQV, impression for CPM) is INVALID with `BUDGET_EXHAUSTED`, `DAILY_BUDGET_EXHAUSTED` (campaign-local day) or `ADVERTISER_FUNDS_EXHAUSTED` if it would push committed spend past the campaign's total budget, its daily budget, or the advertiser's prepaid balance minus unbilled spend on all of its campaigns. The playlist applies the same test, so ads stop being served at that point.
+
 **HELD_REVIEW** (counts only after a person with `events.review` approves it):
 - `OFFLINE_DELAYED`: received > 10 min after occurring. Offline playback never becomes revenue automatically (spec invariant 12).
 - `RATE_ANOMALY`: more than 40 qualified ad views on one tablet in a rolling hour, across all campaigns.
@@ -61,6 +63,10 @@ Validated measurements are immutable (DB trigger). A held event can be decided e
 5. Windows for a campaign can never overlap (GiST exclusion), so no event is paid twice. The call is idempotent on `idempotencyKey`.
 
 `/preview` returns the same calculation without posting. `GET /v1/finance/campaigns/:id/metrics?from&to` returns impressions, starts, qualified views, completions, skips, visible seconds, average visible seconds, clicks, CTR, and the invalid and held counts.
+
+## 4b. Scheduled allocation (session 6)
+`npm run jobs:allocate-windows -w @rmn/api` (hourly, after the validator) or `POST /v1/finance/allocation-windows/run` (`finance.allocation.post`).
+For each campaign with unbilled valid events, it allocates one window from the end of the previous window (or the campaign start) to the most recent `ALLOCATION_WINDOW_MINUTES` boundary that closed at least `ALLOCATION_SETTLE_MINUTES` ago. Blocked windows (unvalidated or held events, closed period, missing rule) are skipped with a reason and the job exits non-zero so alerting picks them up. Postings are recorded as the system scheduler identity. Automated windows apply no deductions (D-038).
 
 ## 5. Operations
 - Run `npm run jobs:validate-events -w @rmn/api` every minute. It is a single runner (advisory lock) and processes events in a deterministic order: per tablet, playback before active segments, in time order.

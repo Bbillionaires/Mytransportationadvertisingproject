@@ -1,6 +1,7 @@
 import type { Db, Tx } from '../../db/pool.js';
 import { withTx } from '../../db/pool.js';
 import { isScheduleActive } from '../campaigns/schedule.js';
+import { advertiserAvailableMilli, campaignSpend, nextPlayBlock } from '../campaigns/budget.js';
 import {
   classifyActiveSegment, classifyAd, classifyContent, decideStatus, exposureIsPossible, POLICY_V1, POLICY_VERSION, timingReasons, type Reason,
 } from './policy.js';
@@ -38,7 +39,7 @@ async function campaignChecks(tx: Tx, campaignId: string, creativeId: string, at
   else if (creative.status !== 'APPROVED') reasons.push('CREATIVE_NOT_APPROVED');
   const late = await tx.query(`SELECT 1 FROM allocation_windows WHERE campaign_id = $1 AND tstzrange(period_start, period_end) @> $2::timestamptz`, [campaignId, at]);
   if (late.rows[0]) reasons.push('LATE_AFTER_ALLOCATION');
-  return { reasons, creative: creative && creative.campaign_id === campaignId ? creative : null, known: !!camp, frequencyCap: (camp?.frequency_cap_per_hour ?? null) as number | null };
+  return { reasons, creative: creative && creative.campaign_id === campaignId ? creative : null, known: !!camp, campaign: camp, frequencyCap: (camp?.frequency_cap_per_hour ?? null) as number | null };
 }
 
 /** Approved adjacent content attributes the ad to that content's creator; anything else is unattributed. */
@@ -119,6 +120,17 @@ async function validateOne(tx: Tx, e: RawRow) {
       }
     }
     if (isVideoMedia && (await overlapsPlayback(tx, e.device_id, x.startedAt, x.endedAt))) reasons.push('OVERLAPPING_PLAYBACK');
+    // Budget and funds: a billable play the advertiser has not funded or budgeted is never billed.
+    if (e.type === 'AD_PLAYBACK' && reasons.length === 0) {
+      const camp = (await tx.query('SELECT * FROM campaigns WHERE id = $1', [p.campaignId])).rows[0];
+      const billable = camp.pricing_model === 'CPQV' ? row.qualified : row.impression;
+      if (billable) {
+        const spend = (await campaignSpend(tx, [camp.id], x.startedAt)).get(camp.id)!;
+        const available = await advertiserAvailableMilli(tx, camp.advertiser_org_id, camp.currency.trim(), x.startedAt);
+        const block = nextPlayBlock(camp, spend, available);
+        if (block) reasons.push(block);
+      }
+    }
   } else if (e.type === 'CLICK') {
     const cc = await campaignChecks(tx, p.campaignId, p.creativeId, e.occurred_at, ctx.market);
     reasons.push(...cc.reasons);

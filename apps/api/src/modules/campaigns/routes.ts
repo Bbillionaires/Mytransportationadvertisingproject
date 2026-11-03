@@ -10,6 +10,7 @@ import { actorOf, authorize } from '../../auth/context.js';
 import { loadOrg } from '../orgs/routes.js';
 import { campaignMetrics } from '../events/aggregate.js';
 import { isValidTimezone } from './schedule.js';
+import { advertiserAvailableMilli, campaignSpend, nextPlayBlock } from './budget.js';
 
 export const ALLOWED_CATEGORIES = ['GENERAL', 'FOOD_DRINK', 'RETAIL', 'ENTERTAINMENT', 'TRAVEL', 'LOCAL_SERVICES', 'AUTOMOTIVE', 'TECHNOLOGY', 'EDUCATION', 'HEALTH_WELLNESS', 'FINANCIAL_SERVICES', 'NONPROFIT'] as const;
 /** Refused outright until legal sets jurisdiction-specific rules (DECISIONS.md D-031). */
@@ -36,8 +37,10 @@ const campaignCreate = z.object({
   currency: currency.default('USD'), startsAt: z.string().datetime(), endsAt: z.string().datetime(), destinationUrl: httpsUrl.optional(),
   markets: z.array(z.string().min(1).max(100)).max(50).default([]), frequencyCapPerHour: z.number().int().min(1).max(60).optional(),
   priority: z.number().int().min(1).max(10).default(5), skipDelaySeconds: z.number().int().min(0).max(60).default(5), ...scheduleFields,
+  totalBudgetMinor: minor.optional(), dailyBudgetMinor: minor.optional(),
 }).refine((v) => new Date(v.endsAt) > new Date(v.startsAt), 'endsAt must be after startsAt').refine((v) => v.startMinute !== v.endMinute, 'startMinute and endMinute must differ')
-  .refine((v) => v.rateMinor > 0n, 'rateMinor must be positive');
+  .refine((v) => v.rateMinor > 0n, 'rateMinor must be positive')
+  .refine((v) => (v.totalBudgetMinor ?? 1n) > 0n && (v.dailyBudgetMinor ?? 1n) > 0n, 'budgets must be positive');
 
 const campaignPatch = z.object({
   name: z.string().min(1).max(200), category, pricingModel: z.enum(['CPM', 'CPQV']), rateMinor: minor, startsAt: z.string().datetime(), endsAt: z.string().datetime(),
@@ -45,12 +48,13 @@ const campaignPatch = z.object({
   priority: z.number().int().min(1).max(10), skipDelaySeconds: z.number().int().min(0).max(60),
   timezone: z.string().refine(isValidTimezone, 'unknown IANA time zone'), daysOfWeek: z.array(z.number().int().min(0).max(6)).min(1).max(7),
   startMinute: z.number().int().min(0).max(1439), endMinute: z.number().int().min(1).max(1440),
+  totalBudgetMinor: minor.nullable(), dailyBudgetMinor: minor.nullable(),
 }).partial();
 
 const COLUMN: Record<string, string> = {
   name: 'name', category: 'category', pricingModel: 'pricing_model', rateMinor: 'rate_minor', startsAt: 'starts_at', endsAt: 'ends_at', destinationUrl: 'destination_url',
   markets: 'markets', frequencyCapPerHour: 'frequency_cap_per_hour', priority: 'priority', skipDelaySeconds: 'skip_delay_seconds', timezone: 'timezone',
-  daysOfWeek: 'days_of_week', startMinute: 'start_minute', endMinute: 'end_minute',
+  daysOfWeek: 'days_of_week', startMinute: 'start_minute', endMinute: 'end_minute', totalBudgetMinor: 'total_budget_minor', dailyBudgetMinor: 'daily_budget_minor',
 };
 
 const creativeCreate = z.object({
@@ -66,6 +70,7 @@ const toApi = (c: any) => c && ({
   id: c.id, advertiserOrgId: c.advertiser_org_id, name: c.name, status: c.status, category: c.category, pricingModel: c.pricing_model, rateMinor: String(c.rate_minor),
   currency: c.currency.trim(), startsAt: c.starts_at, endsAt: c.ends_at, destinationUrl: c.destination_url, markets: c.markets, frequencyCapPerHour: c.frequency_cap_per_hour,
   priority: c.priority, skipDelaySeconds: c.skip_delay_seconds, schedule: { timezone: c.timezone, daysOfWeek: c.days_of_week, startMinute: c.start_minute, endMinute: c.end_minute },
+  totalBudgetMinor: c.total_budget_minor === null ? null : String(c.total_budget_minor), dailyBudgetMinor: c.daily_budget_minor === null ? null : String(c.daily_budget_minor),
   submittedAt: c.submitted_at, reviewedAt: c.reviewed_at, reviewNote: c.review_note, createdAt: c.created_at,
 });
 const creativeApi = (c: any) => ({ id: c.id, campaignId: c.campaign_id, name: c.name, kind: c.kind, status: c.status, durationMs: c.duration_ms, headline: c.headline,
@@ -117,10 +122,11 @@ export async function campaignRoutes(app: FastifyInstance, { db }: { db: Db }) {
     const r = await withTx(db, async (tx) => {
       const c = await tx.query(
         `INSERT INTO campaigns (advertiser_org_id, name, category, pricing_model, rate_minor, currency, starts_at, ends_at, destination_url, markets, frequency_cap_per_hour,
-           priority, skip_delay_seconds, timezone, days_of_week, start_minute, end_minute, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
+           priority, skip_delay_seconds, timezone, days_of_week, start_minute, end_minute, created_by, total_budget_minor, daily_budget_minor)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
         [orgId, b.name, b.category, b.pricingModel, b.rateMinor.toString(), b.currency, b.startsAt, b.endsAt, b.destinationUrl ?? null, b.markets, b.frequencyCapPerHour ?? null,
-         b.priority, b.skipDelaySeconds, b.timezone, [...new Set(b.daysOfWeek)].sort(), b.startMinute, b.endMinute, auth.userId]);
+         b.priority, b.skipDelaySeconds, b.timezone, [...new Set(b.daysOfWeek)].sort(), b.startMinute, b.endMinute, auth.userId,
+         b.totalBudgetMinor?.toString() ?? null, b.dailyBudgetMinor?.toString() ?? null]);
       await audit(tx, actorOf(req), 'campaign.created', { type: 'campaign', id: c.rows[0].id, orgId }, { name: b.name });
       return c.rows[0];
     });
@@ -148,6 +154,7 @@ export async function campaignRoutes(app: FastifyInstance, { db }: { db: Db }) {
     if (!keys.length) throw unprocessable('nothing to update');
     return withTx(db, async (tx) => {
       await ownedCampaign(tx, orgId, id, true);
+      if ((b.totalBudgetMinor ?? 1n) <= 0n || (b.dailyBudgetMinor ?? 1n) <= 0n) throw unprocessable('budgets must be positive');
       const vals = keys.map((k) => { const v = b[k]; return typeof v === 'bigint' ? v.toString() : k === 'daysOfWeek' ? [...new Set(v as number[])].sort() : v; });
       const set = keys.map((k, i) => `${COLUMN[k]} = $${i + 3}`).join(', ');
       const u = await tx.query(`UPDATE campaigns SET ${set} WHERE id = $1 AND advertiser_org_id = $2 RETURNING *`, [id, orgId, ...vals]);
@@ -217,6 +224,25 @@ export async function campaignRoutes(app: FastifyInstance, { db }: { db: Db }) {
     return campaignMetrics(db, id, q.from, q.to);
   });
 
+  /** Live committed spend (valid + held billable plays) against budgets, and whether delivery is currently allowed. */
+  app.get('/v1/orgs/:orgId/campaigns/:id/spend', async (req) => {
+    const { orgId, id } = parse(z.object({ orgId: uuid, id: uuid }), req.params);
+    await advertiserOrg(db, orgId);
+    await authorize(db, req, 'campaign.read', orgId);
+    const c = await ownedCampaign(db, orgId, id);
+    const now = new Date();
+    const s = (await campaignSpend(db, [id], now)).get(id)!;
+    const available = await advertiserAvailableMilli(db, orgId, c.currency.trim(), now);
+    const minorStr = (m: bigint) => (m / 1000n).toString();
+    const remaining = c.total_budget_minor === null ? null : BigInt(c.total_budget_minor) * 1000n - s.spendMilli;
+    return {
+      campaignId: id, currency: c.currency.trim(), spent: minorStr(s.spendMilli), spentToday: minorStr(s.todayMilli), unbilled: minorStr(s.unallocatedMilli),
+      spentMilliMinor: s.spendMilli.toString(), totalBudget: c.total_budget_minor === null ? null : String(c.total_budget_minor),
+      dailyBudget: c.daily_budget_minor === null ? null : String(c.daily_budget_minor), remainingBudget: remaining === null ? null : minorStr(remaining),
+      deliveryBlockedBy: c.status === 'APPROVED' ? nextPlayBlock(c, s, available) : `CAMPAIGN_${c.status}`,
+    };
+  });
+
   /** Remaining prepaid balance, open refunds and allocated spend, straight from the ledger. */
   app.get('/v1/orgs/:orgId/balance', async (req) => {
     const { orgId } = parse(z.object({ orgId: uuid }), req.params);
@@ -230,6 +256,11 @@ export async function campaignRoutes(app: FastifyInstance, { db }: { db: Db }) {
       if (x.account_code === '2000') e.prepaidBalance = x.balance;
       if (x.account_code === '2600') e.refundsPending = x.balance;
       if (x.account_code === '1100') e.commissionsOwed = x.balance;
+    }
+    const now = new Date();
+    for (const [ccy, e] of Object.entries(byCcy)) {
+      const avail = await advertiserAvailableMilli(db, orgId, ccy, now);
+      Object.assign(e, { committedUnbilled: ((BigInt(e.prepaidBalance) * 1000n - avail) / 1000n).toString(), available: (avail / 1000n).toString() });
     }
     return { balances: byCcy };
   });

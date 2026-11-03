@@ -4,6 +4,7 @@ import type { Db } from '../../db/pool.js';
 import { signMediaUrl } from '../../lib/media.js';
 import { authenticateDevice } from '../devices/routes.js';
 import { isScheduleActive } from './schedule.js';
+import { advertiserAvailableMilli, campaignSpend, nextPlayBlock } from './budget.js';
 
 /**
  * What a tablet may show right now. Served only to signed, ACTIVE, vehicle-assigned tablets. An ad is
@@ -30,7 +31,15 @@ export async function playlistRoutes(app: FastifyInstance, { db, config }: { db:
           AND (SELECT coalesce(sum(credit) - sum(debit), 0) FROM journal_lines jl
                 WHERE jl.account_code = '2000' AND jl.party_id = c.advertiser_org_id AND jl.currency = c.currency) > 0`,
       [now, market]);
-    const live = campaigns.rows.filter((c) => isScheduleActive({ timezone: c.timezone, daysOfWeek: c.days_of_week, startMinute: c.start_minute, endMinute: c.end_minute }, now));
+    const scheduled = campaigns.rows.filter((c) => isScheduleActive({ timezone: c.timezone, daysOfWeek: c.days_of_week, startMinute: c.start_minute, endMinute: c.end_minute }, now));
+    // Stop serving campaigns whose budget, daily budget or advertiser funds cannot cover one more billable play.
+    const spend = await campaignSpend(db, scheduled.map((c) => c.id), now);
+    const available = new Map<string, bigint>();
+    for (const c of scheduled) {
+      const k = `${c.advertiser_org_id}:${c.currency}`;
+      if (!available.has(k)) available.set(k, await advertiserAvailableMilli(db, c.advertiser_org_id, c.currency.trim(), now));
+    }
+    const live = scheduled.filter((c) => nextPlayBlock(c, spend.get(c.id)!, available.get(`${c.advertiser_org_id}:${c.currency}`)!) === null);
     const creatives = await db.query(`SELECT * FROM creatives WHERE campaign_id = ANY($1::uuid[]) AND status = 'APPROVED' ORDER BY created_at`, [live.map((c) => c.id)]);
     const ads = creatives.rows.map((cr) => {
       const c = live.find((x) => x.id === cr.campaign_id)!;
