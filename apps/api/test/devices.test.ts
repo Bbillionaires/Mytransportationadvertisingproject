@@ -97,3 +97,55 @@ describe('device enrollment and signed requests', () => {
     await expect(ctx.db.query(`INSERT INTO device_assignments (org_id, device_id, vehicle_id, created_by) VALUES ($1,$2,$3,$4)`, [orgId, t.deviceId, v1.id, admin.userId])).rejects.toThrow(/conflicting key|exclusion/);
   });
 });
+
+describe('fleet portal device management', () => {
+  const inj = (method: 'GET' | 'POST' | 'PATCH', url: string, payload?: unknown, h = admin.h) => ctx.app.inject({ method, url, headers: h, payload: payload as any });
+
+  it('lists enrollment codes without revealing them, and revokes unused codes', async () => {
+    const c = (await inj('POST', `/v1/orgs/${orgId}/devices/enrollment-codes`, { label: 'van 7' })).json();
+    const list = (await inj('GET', `/v1/orgs/${orgId}/devices/enrollment-codes`)).json().items;
+    const row = list.find((x: any) => x.id === c.id);
+    expect(row).toMatchObject({ label: 'van 7', state: 'ACTIVE' });
+    expect(JSON.stringify(list)).not.toContain(c.code);
+    expect((await inj('POST', `/v1/orgs/${orgId}/devices/enrollment-codes/${c.id}/revoke`)).statusCode).toBe(200);
+    const t = new FakeTablet(ctx.app);
+    expect((await ctx.app.inject({ method: 'POST', url: '/v1/devices/enroll', payload: { code: c.code, serial: t.serial, publicKey: t.publicKeyB64, appVersion: '1' } })).statusCode).toBe(401);
+    expect((await inj('POST', `/v1/orgs/${orgId}/devices/enrollment-codes/${c.id}/revoke`)).statusCode).toBe(404);
+  });
+
+  it('shows key type, vehicle, pending commands and command history; relabels and unassigns', async () => {
+    const t = await enroll();
+    const fleet = (await inj('POST', `/v1/orgs/${orgId}/fleets`, { name: 'F', market: 'M', timezone: 'UTC' })).json().id;
+    const vehicle = (await inj('POST', `/v1/orgs/${orgId}/vehicles`, { fleetId: fleet, label: 'CAB-9' })).json().id;
+    await inj('POST', `/v1/orgs/${orgId}/devices/${t.deviceId}/assignments`, { vehicleId: vehicle });
+    await inj('POST', `/v1/orgs/${orgId}/devices/${t.deviceId}/commands`, { command: 'REFRESH_PLAYBACK' });
+    expect((await inj('PATCH', `/v1/orgs/${orgId}/devices/${t.deviceId}`, { label: 'Back seat left' })).statusCode).toBe(200);
+    const d = (await inj('GET', `/v1/orgs/${orgId}/devices`)).json().items.find((x: any) => x.id === t.deviceId);
+    expect(d).toMatchObject({ label: 'Back seat left', vehicle_label: 'CAB-9', pending_commands: 1, keyType: 'ED25519' });
+    expect(d.public_key_der).toBeUndefined();
+    const hist = (await inj('GET', `/v1/orgs/${orgId}/devices/${t.deviceId}/commands`)).json().items;
+    expect(hist[0]).toMatchObject({ command: 'REFRESH_PLAYBACK', status: 'PENDING' });
+    expect((await inj('POST', `/v1/orgs/${orgId}/devices/${t.deviceId}/unassign`)).statusCode).toBe(200);
+    expect((await inj('GET', `/v1/orgs/${orgId}/devices`)).json().items.find((x: any) => x.id === t.deviceId).vehicle_id).toBeNull();
+  });
+
+  it('retiring a tablet stops its key immediately and frees the serial for re-enrollment', async () => {
+    const t = await enroll();
+    expect((await inj('POST', `/v1/orgs/${orgId}/devices/${t.deviceId}/retire`, { reason: 'x' })).statusCode).toBe(400);
+    expect((await inj('POST', `/v1/orgs/${orgId}/devices/${t.deviceId}/retire`, { reason: 'stolen from vehicle' })).statusCode).toBe(200);
+    expect((await t.call('POST', '/v1/devices/heartbeat', { appVersion: '1' })).statusCode).toBe(401);
+    expect((await inj('POST', `/v1/orgs/${orgId}/devices/${t.deviceId}/commands`, { command: 'RESUME' })).statusCode).toBe(409);
+    const code = (await inj('POST', `/v1/orgs/${orgId}/devices/enrollment-codes`, {})).json().code;
+    expect((await ctx.app.inject({ method: 'POST', url: '/v1/devices/enroll', payload: { code, serial: t.serial, publicKey: t.publicKeyB64, appVersion: '1' } })).statusCode).toBe(201);
+  });
+
+  it('viewers can see devices but cannot manage them; other fleets cannot see them', async () => {
+    const viewer = await userWithRole(ctx, orgId, 'fleet_viewer');
+    expect((await inj('GET', `/v1/orgs/${orgId}/devices`, undefined, viewer.h)).statusCode).toBe(200);
+    expect((await inj('GET', `/v1/orgs/${orgId}/devices/enrollment-codes`, undefined, viewer.h)).statusCode).toBe(403);
+    expect((await inj('POST', `/v1/orgs/${orgId}/devices/enrollment-codes`, {}, viewer.h)).statusCode).toBe(403);
+    const other = await org(ctx.db, 'FLEET_OPERATOR');
+    const otherAdmin = await userWithRole(ctx, other, 'fleet_admin');
+    expect((await inj('GET', `/v1/orgs/${orgId}/devices`, undefined, otherAdmin.h)).statusCode).toBe(403);
+  });
+});

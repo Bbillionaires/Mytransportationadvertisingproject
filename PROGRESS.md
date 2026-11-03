@@ -265,7 +265,23 @@ Fixed during e2e: the heartbeat overwrote the shell's app version with the web v
 
 Test totals: finance-core 28, API 154, Android unit tests (UrlPolicy, BridgeProtocol), browser e2e: tablet ride (web key + simulated Android key) and rider app.
 
+## 2026-11-03 — Session 15: business portal, fleet operators first
+
+| Item | Status | Evidence |
+|---|---|---|
+| `apps/portal` at `/portal/`: sign-in, two-step verification (challenge + self-service setup), password reset, email confirmation, invitation acceptance, org switcher, role-aware navigation | ✅ | portal browser e2e |
+| Fleet: overview with health counts and "needs attention"; tablets list with assign/move/unassign, refresh, suspend/resume, clear rider, rename, command history, retire | ✅ | portal e2e drives a real web-player tablet |
+| Fleet: add-a-tablet flow with one-time codes and revoke; vehicles & fleets; drivers; team invitations | ✅ | portal e2e |
+| API: list/revoke enrollment codes, relabel, command history, unassign, retire; device list shows vehicle, pending commands and key type | ✅ | `devices.test.ts` (+4) |
+| Email links (verify, reset, invite) open the portal instead of the admin console | ✅ | accounts tests + portal e2e |
+| Read-only fleet viewers see no management actions; phone-width layout | ✅ | portal e2e (390 px) |
+
+Bugs found by e2e and fixed: a stale dialog close event answered the next confirmation (retire); signing out re-rendered the previous page.
+
+Test totals: finance-core 28, API 158, Android unit tests, browser e2e: tablet ride, rider app, fleet portal.
+
 ### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
-1. Upgraded business web portals (advertiser, creator, driver, fleet, staff).
-2. Android field test on one tablet with the chosen EMM; add key attestation at enrollment (R-028).
-3. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).
+1. Portal: advertiser section (campaigns, creative upload, budgets and prepayment, offers and geofences, reports).
+2. Portal: creator, driver and staff sections (uploads/moderation status/earnings; driver earnings; moderation queue and finance approvals), then retire `/admin/`.
+3. Android field test on one tablet with the chosen EMM (D-017); key attestation at enrollment (R-028).
+4. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).

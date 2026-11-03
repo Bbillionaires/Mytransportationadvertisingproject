@@ -43,10 +43,16 @@ Error codes: `UNAUTHENTICATED` 401 · `FORBIDDEN` / `MFA_REQUIRED` / `SEPARATION
 | Method | Path | Auth |
 |---|---|---|
 | POST | `/v1/orgs/:orgId/devices/enrollment-codes` | `device.manage` → one-time code (shown once) |
-| GET | `/v1/orgs/:orgId/devices` | `device.read`; includes health and current assignment |
+| GET | `/v1/orgs/:orgId/devices/enrollment-codes` | `device.manage`; codes from the last 7 days with state ACTIVE/USED/EXPIRED (never the code itself) |
+| POST | `/v1/orgs/:orgId/devices/enrollment-codes/:codeId/revoke` | `device.manage`; unused codes only |
+| GET | `/v1/orgs/:orgId/devices` | `device.read`; health, current vehicle (`vehicle_label`), `pending_commands`, `keyType` (`ECDSA_P256` Android shell / `ED25519` web player) |
+| PATCH | `/v1/orgs/:orgId/devices/:deviceId` | `device.manage` `{label}` |
+| GET | `/v1/orgs/:orgId/devices/:deviceId/commands` | `device.read`; last 20 commands with status and issuer |
+| POST | `/v1/orgs/:orgId/devices/:deviceId/unassign` | `device.manage`; ends the assignment and signs out the tablet's rider |
+| POST | `/v1/orgs/:orgId/devices/:deviceId/retire` | `device.manage` `{reason}`; key stops working at once, pending commands expire, serial freed for re-enrollment |
 | POST | `/v1/orgs/:orgId/devices/:deviceId/assignments` | `device.manage` `{vehicleId, driverId?}` |
 | POST | `/v1/orgs/:orgId/devices/:deviceId/commands` | `device.command` `{command: REFRESH_PLAYBACK\|SUSPEND\|RESUME\|UPDATE_CONFIG\|PURGE_RIDER_DATA}` |
-| POST | `/v1/devices/enroll` | enrollment code (5/min) `{code, serial, publicKey(base64 SPKI Ed25519), appVersion}` |
+| POST | `/v1/devices/enroll` | enrollment code (5/min) `{code, serial, publicKey(base64 SPKI Ed25519 or ECDSA P-256), appVersion}` |
 | POST | `/v1/devices/heartbeat` | **signed device** → `{deviceStatus, playbackAllowed, commands[]}` |
 | POST | `/v1/devices/commands/:id/ack` | **signed device** `{ok, detail?}` |
 

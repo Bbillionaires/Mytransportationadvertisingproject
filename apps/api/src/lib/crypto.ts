@@ -104,3 +104,14 @@ export function verifyDeviceSignature(der: Buffer, data: Buffer, signatureB64: s
 export function deviceSigningPayload(method: string, path: string, timestamp: string, nonce: string, body: string): Buffer {
   return Buffer.from([method.toUpperCase(), path, timestamp, nonce, sha256hex(body)].join('\n'), 'utf8');
 }
+
+/**
+ * ECDSA_P256 = Android shell (Keystore) key; ED25519 = web-player (browser) key. The key type alone does not prove the
+ * key is hardware-backed; that needs key attestation at enrollment (R-028).
+ */
+export function deviceKeyType(der: Buffer): 'ECDSA_P256' | 'ED25519' | 'UNKNOWN' {
+  try {
+    const t = createPublicKey({ key: der, format: 'der', type: 'spki' }).asymmetricKeyType;
+    return t === 'ec' ? 'ECDSA_P256' : t === 'ed25519' ? 'ED25519' : 'UNKNOWN';
+  } catch { return 'UNKNOWN'; }
+}

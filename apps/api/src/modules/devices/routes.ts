@@ -4,7 +4,7 @@ import type { Config } from '../../config.js';
 import type { Db } from '../../db/pool.js';
 import { withTx } from '../../db/pool.js';
 import { audit } from '../../lib/audit.js';
-import { deviceSigningPayload, parseDevicePublicKey, randomToken, sha256hex, verifyDeviceSignature } from '../../lib/crypto.js';
+import { deviceKeyType, deviceSigningPayload, parseDevicePublicKey, randomToken, sha256hex, verifyDeviceSignature } from '../../lib/crypto.js';
 import { badRequest, conflict, notFound, unauthorized } from '../../lib/errors.js';
 import { parse, uuid } from '../../lib/validation.js';
 import { actorOf, authorize } from '../../auth/context.js';
@@ -60,18 +60,98 @@ export async function deviceRoutes(app: FastifyInstance, { db, config }: { db: D
     return { id: r.id, code, expiresAt: r.expires_at, note: 'Shown once. Enter on the tablet during kiosk provisioning.' };
   });
 
+  app.get('/v1/orgs/:orgId/devices/enrollment-codes', async (req) => {
+    const { orgId } = parse(z.object({ orgId: uuid }), req.params);
+    await fleetOrg(orgId);
+    await authorize(db, req, 'device.manage', orgId);
+    const r = await db.query(
+      `SELECT c.id, c.label, c.created_at, c.expires_at, c.used_at, c.device_id, d.serial AS device_serial,
+              CASE WHEN c.used_at IS NOT NULL THEN 'USED' WHEN c.expires_at <= now() THEN 'EXPIRED' ELSE 'ACTIVE' END AS state
+         FROM device_enrollment_codes c LEFT JOIN devices d ON d.id = c.device_id
+        WHERE c.org_id = $1 AND c.created_at > now() - interval '7 days' ORDER BY c.created_at DESC LIMIT 50`,
+      [orgId],
+    );
+    return { items: r.rows };
+  });
+
+  app.post('/v1/orgs/:orgId/devices/enrollment-codes/:codeId/revoke', async (req) => {
+    const { orgId, codeId } = parse(z.object({ orgId: uuid, codeId: uuid }), req.params);
+    await fleetOrg(orgId);
+    await authorize(db, req, 'device.manage', orgId);
+    const r = await db.query(`UPDATE device_enrollment_codes SET expires_at = now() WHERE id = $1 AND org_id = $2 AND used_at IS NULL AND expires_at > now() RETURNING id`, [codeId, orgId]);
+    if (!r.rows[0]) throw notFound('active enrollment code not found');
+    await audit(db, actorOf(req), 'device.enrollment_code_revoked', { type: 'enrollment_code', id: codeId, orgId });
+    return { revoked: true };
+  });
+
   app.get('/v1/orgs/:orgId/devices', async (req) => {
     const { orgId } = parse(z.object({ orgId: uuid }), req.params);
     await fleetOrg(orgId);
     await authorize(db, req, 'device.read', orgId);
     const r = await db.query(
       `SELECT d.id, d.serial, d.label, d.status, d.app_version, d.os_version, d.storage_free_bytes, d.connectivity, d.last_heartbeat_at, d.last_sync_at, d.enrolled_at,
-              a.vehicle_id, a.driver_id, (d.last_heartbeat_at > now() - interval '10 minutes') AS online
-         FROM devices d LEFT JOIN device_assignments a ON a.device_id = d.id AND a.ends_at IS NULL
+              d.public_key_der, a.vehicle_id, v.label AS vehicle_label, a.driver_id, (d.last_heartbeat_at > now() - interval '10 minutes') AS online,
+              (SELECT count(*)::int FROM device_commands c WHERE c.device_id = d.id AND c.status IN ('PENDING','DELIVERED')) AS pending_commands
+         FROM devices d LEFT JOIN device_assignments a ON a.device_id = d.id AND a.ends_at IS NULL LEFT JOIN vehicles v ON v.id = a.vehicle_id
         WHERE d.org_id = $1 ORDER BY d.serial`,
       [orgId],
     );
+    // keyType tells operators whether the tablet runs the Android shell (Keystore key) or the plain web player (R-028).
+    return { items: r.rows.map(({ public_key_der, ...d }) => ({ ...d, keyType: deviceKeyType(public_key_der) })) };
+  });
+
+  app.patch('/v1/orgs/:orgId/devices/:deviceId', async (req) => {
+    const { orgId, deviceId } = parse(z.object({ orgId: uuid, deviceId: uuid }), req.params);
+    await fleetOrg(orgId);
+    await authorize(db, req, 'device.manage', orgId);
+    const b = parse(z.object({ label: z.string().trim().max(100) }), req.body);
+    const r = await db.query('UPDATE devices SET label = $3 WHERE id = $1 AND org_id = $2 RETURNING id, label', [deviceId, orgId, b.label || null]);
+    if (!r.rows[0]) throw notFound('device not found');
+    await audit(db, actorOf(req), 'device.relabeled', { type: 'device', id: deviceId, orgId }, b);
+    return r.rows[0];
+  });
+
+  app.get('/v1/orgs/:orgId/devices/:deviceId/commands', async (req) => {
+    const { orgId, deviceId } = parse(z.object({ orgId: uuid, deviceId: uuid }), req.params);
+    await fleetOrg(orgId);
+    await authorize(db, req, 'device.read', orgId);
+    const r = await db.query(
+      `SELECT c.id, c.command, c.status, c.created_at, c.delivered_at, c.acked_at, u.display_name AS issued_by
+         FROM device_commands c JOIN users u ON u.id = c.created_by WHERE c.device_id = $1 AND c.org_id = $2 ORDER BY c.created_at DESC LIMIT 20`,
+      [deviceId, orgId],
+    );
     return { items: r.rows };
+  });
+
+  /** Unassign: the tablet stops getting a playlist (no vehicle) until reassigned. */
+  app.post('/v1/orgs/:orgId/devices/:deviceId/unassign', async (req) => {
+    const { orgId, deviceId } = parse(z.object({ orgId: uuid, deviceId: uuid }), req.params);
+    await fleetOrg(orgId);
+    await authorize(db, req, 'device.manage', orgId);
+    return withTx(db, async (tx) => {
+      const r = await tx.query('UPDATE device_assignments SET ends_at = now() WHERE device_id = $1 AND org_id = $2 AND ends_at IS NULL RETURNING id', [deviceId, orgId]);
+      if (!r.rows[0]) throw notFound('device has no current assignment');
+      await endTabletSessions(tx, deviceId);
+      await audit(tx, actorOf(req), 'device.unassigned', { type: 'device', id: deviceId, orgId });
+      return { unassigned: true };
+    });
+  });
+
+  /** Retire a lost, replaced or broken tablet: its key stops working immediately and the serial can be re-enrolled. */
+  app.post('/v1/orgs/:orgId/devices/:deviceId/retire', async (req) => {
+    const { orgId, deviceId } = parse(z.object({ orgId: uuid, deviceId: uuid }), req.params);
+    await fleetOrg(orgId);
+    await authorize(db, req, 'device.manage', orgId);
+    const b = parse(z.object({ reason: z.string().trim().min(5).max(500) }), req.body);
+    return withTx(db, async (tx) => {
+      const r = await tx.query(`UPDATE devices SET status = 'RETIRED', serial = serial || '#retired-' || substr(id::text, 1, 8) WHERE id = $1 AND org_id = $2 AND status <> 'RETIRED' RETURNING id`, [deviceId, orgId]);
+      if (!r.rows[0]) throw notFound('active device not found');
+      await tx.query('UPDATE device_assignments SET ends_at = now() WHERE device_id = $1 AND ends_at IS NULL', [deviceId]);
+      await tx.query(`UPDATE device_commands SET status = 'EXPIRED' WHERE device_id = $1 AND status IN ('PENDING','DELIVERED')`, [deviceId]);
+      await endTabletSessions(tx, deviceId);
+      await audit(tx, actorOf(req), 'device.retired', { type: 'device', id: deviceId, orgId }, b);
+      return { retired: true };
+    });
   });
 
   app.post('/v1/orgs/:orgId/devices/:deviceId/assignments', async (req, reply) => {
@@ -80,7 +160,7 @@ export async function deviceRoutes(app: FastifyInstance, { db, config }: { db: D
     const auth = await authorize(db, req, 'device.manage', orgId);
     const b = parse(z.object({ vehicleId: uuid, driverId: uuid.optional() }), req.body);
     const r = await withTx(db, async (tx) => {
-      const dev = await tx.query('SELECT id FROM devices WHERE id = $1 AND org_id = $2 FOR UPDATE', [deviceId, orgId]);
+      const dev = await tx.query(`SELECT id FROM devices WHERE id = $1 AND org_id = $2 AND status <> 'RETIRED' FOR UPDATE`, [deviceId, orgId]);
       if (!dev.rows[0]) throw notFound('device not found');
       const v = await tx.query('SELECT id FROM vehicles WHERE id = $1 AND org_id = $2', [b.vehicleId, orgId]);
       if (!v.rows[0]) throw notFound('vehicle not found');

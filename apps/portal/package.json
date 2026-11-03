@@ -1,0 +1,16 @@
+{
+  "name": "@rmn/portal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Business web portal (fleet operators first; advertisers, creators, drivers and staff follow).",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p .",
+    "e2e": "node build.mjs && tsx e2e/portal.e2e.ts"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "tsx": "^4.23.15"
+  }
+}

@@ -14,7 +14,7 @@ import { loadOrg } from '../orgs/routes.js';
 const COMMON = new Set(['password1234', '123456789012', 'qwertyuiopas', 'letmein12345', 'passwordpassword', 'iloveyou1234', 'welcome12345', 'adminadmin12']);
 export const passwordSchema = z.string().min(12, 'use at least 12 characters').max(200).refine((p) => !COMMON.has(p.toLowerCase()), 'this password is too common');
 
-const link = (config: Config, param: string, token: string) => `${config.APP_PUBLIC_URL}/admin/?${param}=${encodeURIComponent(token)}`;
+const link = (config: Config, param: string, token: string) => `${config.APP_PUBLIC_URL}/portal/?${param}=${encodeURIComponent(token)}`;
 
 /** Issue a single-use token (stored hashed) and queue the email. Previous unused tokens of that purpose are retired. */
 export async function issueUserToken(tx: Tx, config: Config, userId: string, email: string, purpose: 'EMAIL_VERIFY' | 'PASSWORD_RESET') {

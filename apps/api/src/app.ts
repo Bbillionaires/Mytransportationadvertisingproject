@@ -143,5 +143,9 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
   webApp('rider', '../../rider/dist', ['index.html', 'rider.js', 'rider.js.map', 'rider.css', 'manifest.webmanifest', 'sw.js', 'icon.svg'],
     `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
     'camera=(self), geolocation=(), microphone=()');
+  // Business portal (apps/portal): fleet operators first, other roles follow.
+  webApp('portal', '../../portal/dist', ['index.html', 'portal.js', 'portal.js.map', 'portal.css'],
+    `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
+    'camera=(), geolocation=(), microphone=()');
   return app;
 }
