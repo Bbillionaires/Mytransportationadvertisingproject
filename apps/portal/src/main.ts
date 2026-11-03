@@ -2,6 +2,7 @@ import { qrSvg } from '../../player/src/qr';
 import { advertiserSections } from './advertiser';
 import { creatorSections } from './creator';
 import { staffSections } from './staff';
+import { driverSections } from './driver';
 import { TOKEN, ORG, ss, $, el, btn, input, select, chip, toast, render, ago, fmtDate, api, errText, act, closeDialog, dialog, info, setUnauthorizedHandler, type Kid } from './ui';
 
 /**
@@ -150,12 +151,13 @@ const SECTIONS: Record<string, Section[]> = {
     { id: 'vehicles', title: 'Vehicles & fleets', perm: 'fleet.read', view: () => fleetVehicles() },
     { id: 'drivers', title: 'Drivers', perm: 'fleet.read', view: () => fleetDrivers() },
     { id: 'team', title: 'Team', perm: 'org.members.manage', view: () => team(['fleet_admin', 'fleet_viewer', 'driver']) },
+    ...driverSections,
   ],
 };
 const comingSoon = { id: 'home', title: 'Home', perm: '', view: async () => {
   render(el('div', { class: 'card' }, el('h1', {}, current!.name),
     el('p', {}, `The ${current!.kind.replace(/_/g, ' ').toLowerCase()} portal is coming next.`),
-    el('p', { class: 'muted' }, 'Meanwhile, staff can use the admin console at /admin/.')));
+    el('p', { class: 'muted' }, 'Contact support if you expected to see your tools here.')));
 } };
 const sharedSections = [{ id: 'security', title: 'Security', perm: '', view: () => security() }];
 
@@ -177,6 +179,7 @@ async function boot() {
   sw.addEventListener('change', () => { ss.set(ORG, sw.value); history.replaceState(null, '', location.pathname); void boot(); });
   $('#org-switch').replaceChildren(mine.length > 1 ? sw : el('span', {}, pick.name));
   setOrg(pick.id);
+  if (new URLSearchParams(location.search).get('subscription') && !location.hash) history.replaceState(null, '', `${location.pathname}${location.search}#/subscription`);
   const back = new URLSearchParams(location.search).get('prepayment');
   if (back) { history.replaceState(null, '', location.pathname + location.hash); toast(back === 'success' ? 'Payment received. Your balance updates as soon as the processor confirms it.' : 'Payment canceled. Nothing was charged.', back !== 'success'); }
   await route();
@@ -394,11 +397,23 @@ async function fleetVehicles() {
 
 async function fleetDrivers() {
   const drivers = (await api('GET', `${base()}/drivers`)).items as any[];
+  const canAdd = can('fleet.manage') && can('org.members.manage');
+  const [members, fleets] = canAdd ? await Promise.all([api('GET', `${base()}/members`).then((r) => r.items as any[]), loadFleets()]) : [[], []];
+  const waiting = members.filter((m) => m.role === 'driver' && m.status === 'ACTIVE' && !drivers.some((d) => d.user_id === m.user_id));
+  const fleetName = new Map(fleets.map((f) => [f.id, f.name]));
   const label: Record<string, [string, '' | 'ok' | 'warn' | 'err']> = { ELIGIBLE: ['Eligible for earnings', 'ok'], PENDING: ['Pending', 'warn'], SUSPENDED: ['Suspended', 'err'], TERMINATED: ['Ended', ''] };
+  const add = async (m: any) => {
+    if (!fleets.length) { toast('Add a fleet first (Vehicles & fleets).', true); return; }
+    const v = await dialog(`Add ${m.display_name} to a fleet`, [select('Fleet', 'fleetId', fleets.map((f) => [f.id, `${f.name} (${f.market})`]))], 'Add driver');
+    if (v && await act(() => api('POST', `${base()}/drivers`, { userId: m.user_id, fleetId: v.fleetId }), 'Driver added. They can now subscribe and see earnings.')) await fleetDrivers();
+  };
   render(el('h1', {}, 'Drivers'),
-    el('p', { class: 'muted' }, 'Drivers join by invitation (Team). Earnings eligibility is confirmed by platform staff after the subscription, participation terms and payout setup are complete. Earnings are not guaranteed.'),
+    el('p', { class: 'muted' }, 'Drivers join by invitation (Team), then you add them to a fleet here. Earnings eligibility is confirmed by platform staff after the subscription, participation terms and payout setup are complete. Earnings are not guaranteed.'),
+    waiting.length ? el('div', { class: 'card', id: 'waiting-drivers' }, el('h2', {}, 'Accepted invitations — add to a fleet'),
+      el('table', {}, el('tbody', {}, ...waiting.map((m) => el('tr', { 'data-email': m.email }, el('td', {}, m.display_name, el('div', { class: 'sub' }, m.email)),
+        el('td', {}, btn('Add to fleet', () => add(m), 'btn small primary'))))))) : null,
     drivers.length ? el('div', { class: 'table-wrap' }, el('table', { id: 'drivers' }, el('tbody', {}, ...drivers.map((d) => el('tr', {},
-      el('td', {}, d.display_name), el('td', {}, chip(...(label[d.eligibility_status] ?? [d.eligibility_status, ''])))))))) : el('div', { class: 'card' }, el('p', { class: 'muted' }, 'No drivers yet.')));
+      el('td', {}, d.display_name, fleetName.get(d.fleet_id) ? el('div', { class: 'sub' }, fleetName.get(d.fleet_id)!) : null), el('td', {}, chip(...(label[d.eligibility_status] ?? [d.eligibility_status, ''])))))))) : el('div', { class: 'card' }, el('p', { class: 'muted' }, 'No drivers yet.')));
 }
 
 // ------------------------------------------------------------------ shared sections

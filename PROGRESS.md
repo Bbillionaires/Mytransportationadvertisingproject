@@ -329,8 +329,20 @@ Test totals: finance-core 28, API 162, Android unit tests, browser e2e: tablet r
 
 Test totals: finance-core 28, API 166, Android unit tests, browser e2e: tablet ride, rider app, fleet, advertiser, creator and staff portals.
 
+## 2026-11-03 — Session 19: driver portal; admin console retired
+
+| Item | Status | Evidence |
+|---|---|---|
+| Driver "My earnings": disclosure, eligibility, earned/owed/estimate, sales, tablet in vehicle, sources, lines, PDF/CSV statements | ✅ | driver browser e2e (phone size) |
+| Driver subscription: disclosure required, checkout (simulated in dev, real webhook path), active status, receipt, transparent cancellation | ✅ | e2e checks ACTIVE subscription, receipt and $30 in account 4200 (outside the pools) |
+| Fleet portal: add accepted driver invitations to a fleet | ✅ | e2e |
+| Drivers not yet in a fleet see an explanation instead of an error | ✅ | e2e |
+| `/admin/` console removed; `/admin` and `/` redirect to the portal | ✅ | e2e checks the redirect |
+
+The portal now covers every business user. Test totals: finance-core 28, API 166, Android unit tests, browser e2e: tablet ride, rider app, fleet, driver, advertiser, creator and staff portals.
+
 ### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
-1. Portal: driver section (subscription checkout, earnings with disclosure, statements, assigned tablet), then retire `/admin/`.
-2. Advertiser extras: integration keys UI for conversion reporting, CSV export of results.
-3. Android field test on one tablet with the chosen EMM (D-017); key attestation at enrollment (R-028).
+1. Advertiser extras: integration keys UI for conversion reporting, CSV export of results.
+2. Android field test on one tablet with the chosen EMM (D-017); key attestation at enrollment (R-028).
+3. Hardening before a pilot: Postgres row-level security (R-003), object storage + CDN for media (R-021), isolated media worker (R-023), load and penetration tests (R-015).
 4. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).

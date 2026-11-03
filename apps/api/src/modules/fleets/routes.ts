@@ -67,7 +67,7 @@ export async function fleetRoutes(app: FastifyInstance, { db }: { db: Db }) {
     await fleetOrg(db, orgId);
     await authorize(db, req, 'fleet.read', orgId);
     const r = await db.query(
-      `SELECT d.id, d.fleet_id, d.eligibility_status, d.created_at, u.display_name FROM drivers d JOIN users u ON u.id = d.user_id WHERE d.org_id = $1 ORDER BY u.display_name`,
+      `SELECT d.id, d.fleet_id, d.user_id, d.eligibility_status, d.created_at, u.display_name FROM drivers d JOIN users u ON u.id = d.user_id WHERE d.org_id = $1 ORDER BY u.display_name`,
       [orgId],
     );
     return { items: r.rows };

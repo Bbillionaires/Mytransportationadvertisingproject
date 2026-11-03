@@ -213,3 +213,7 @@ Framework client errors (unsupported media type, payload too large, malformed bo
 | POST | `/v1/platform/drivers/:id/eligibility` | same body and rules as above |
 
 `GET /v1/review/campaigns` creatives include `previewUrl` (signed, 30 minutes). `GET /` redirects to `/portal/`.
+
+## Session 19 changes
+- `GET /v1/orgs/:orgId/drivers` items include `user_id` (used to show accepted driver invitations that still need adding to a fleet).
+- `/admin` and `/admin/` redirect to `/portal/`; the old static admin console was removed.

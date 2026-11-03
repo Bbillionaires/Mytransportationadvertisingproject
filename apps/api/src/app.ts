@@ -116,12 +116,9 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
   await app.register(engagementRoutes, { db, config });
   await app.register(platformRoutes, { db });
 
-  // The admin shell is a single static page; all data comes from the permission-checked API.
-  const adminHtml = await readFile(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public/index.html'), 'utf8');
-  const sendAdmin = async (_req: unknown, reply: import('fastify').FastifyReply) =>
-    reply.type('text/html; charset=utf-8').header('content-security-policy', "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; frame-ancestors 'none'").send(adminHtml);
-  app.get('/admin', sendAdmin);
-  app.get('/admin/', sendAdmin);
+  // The old single-page admin console was retired in favour of the business portal (session 19); keep its URL working.
+  app.get('/admin', async (_req, reply) => reply.redirect('/portal/'));
+  app.get('/admin/', async (_req, reply) => reply.redirect('/portal/'));
   app.get('/', async (_req, reply) => reply.redirect('/portal/'));
 
   // Static web apps built by esbuild: fixed file lists, no directory serving, strict CSP on the HTML.

@@ -15,7 +15,7 @@ npm run db:migrate
 SEED_PASSWORD='choose-a-demo-password' npm run db:seed
 
 # 4. Run
-npm run dev                     # http://127.0.0.1:8080/admin/
+npm run dev                     # http://127.0.0.1:8080/portal/
 ```
 Demo finance users must enroll TOTP (`POST /v1/auth/mfa/enroll`, then `/activate`) before any finance endpoint responds.
 

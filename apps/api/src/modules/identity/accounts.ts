@@ -35,7 +35,7 @@ export async function issueUserToken(tx: Tx, config: Config, userId: string, ema
 export const REGISTRATION_ACCEPTED = { status: 'PENDING_VERIFICATION', message: 'Check your email to confirm your address, then sign in.' };
 export async function notifyExistingAccount(tx: Tx, config: Config, email: string) {
   await enqueueEmail(tx, email, 'registration_existing', 'Someone tried to register with your email',
-    `An account already exists for this address. Sign in at ${config.APP_PUBLIC_URL}/admin/ or reset your password there. If this wasn't you, no action is needed.`);
+    `An account already exists for this address. Sign in at ${config.APP_PUBLIC_URL}/portal/ or reset your password there. If this wasn't you, no action is needed.`);
 }
 
 async function consumeToken(tx: Tx, token: string, purpose: string) {

@@ -1,6 +1,6 @@
 # Business portal
 
-`apps/portal` is the web portal for business users at `/portal/`. It is built in stages: **fleet operators** (session 15), **advertisers** (session 16), **creators** (session 17), then **platform staff** (session 18). The driver section follows; until then those users see a placeholder, and staff keep using `/admin/`.
+`apps/portal` is the web portal for business users at `/portal/`. It now covers every business user: **fleet operators** (session 15), **advertisers** (session 16), **creators** (session 17), **platform staff** (session 18) and **drivers** (session 19). The old `/admin/` console is retired; its address redirects to the portal.
 
 > Status: tested end to end in a real browser against the real API and database. Not yet used by a real fleet.
 
@@ -64,7 +64,15 @@ Every staff permission requires a two-step-verified session. A staff member with
 | Organizations | Every organization, with type, status and creation date | platform membership |
 | Audit log | The latest 200 entries, filterable by action | `platform.audit.read` |
 
-The site root `/` now opens the portal. The old `/admin/` console is kept until the driver section is built, because drivers still use it to see their earnings.
+The site root `/` and the old `/admin/` address both open the portal.
+
+## Driver sections (drivers are members of a fleet operator)
+| Section | What it does | Permission |
+|---|---|---|
+| My earnings | Disclosure ("Earnings are not guaranteed…"); eligibility status and what it depends on; earned, balance owed, indicative estimate, sales from their tablet; the tablet in their vehicle with online status; earnings by source and lines; monthly ledger statements (PDF/CSV) | `driver.self.read` |
+| Subscription | $30/month participation subscription. The disclosure must be accepted before checkout (simulated in development). Status (active, payment failed, ends at period end), renewal or end date, receipts. Cancellation: no further charges, access until the end of the paid period | `driver.subscription.manage` |
+
+A driver who has accepted an invitation but has not been added to a fleet sees an explanation instead. Fleet admins add accepted drivers to a fleet on **Drivers** ("Accepted invitations — add to a fleet").
 
 ## Security notes
 - Strict CSP: scripts and styles from the same origin only, no inline script, no framing.
@@ -104,6 +112,16 @@ Not covered by this test: earnings with allocation lines. They are covered by `r
 - a copyright notice is upheld
 - a super admin marks a creator and a driver eligible with reasons, and the audit log shows it
 - the finance admin who requested a journal entry sees no approve button; a separate approver posts it, the trial balance stays balanced, and the advertiser is credited
+
+## Testing (driver)
+`apps/portal/e2e/driver.e2e.ts` covers the following on a phone-sized screen:
+- the retired `/admin/` address redirects to the portal
+- a fleet admin invites a driver, who accepts from the email link
+- before being added to a fleet, the driver sees an explanation instead
+- the fleet admin adds the driver to a fleet and assigns the tablet with the driver
+- the driver sees the disclosure, their eligibility and their tablet
+- subscribing is blocked until the disclosure is accepted; the simulated checkout makes the subscription ACTIVE, issues a receipt, and books $30 to account 4200 (outside the revenue pools)
+- the driver cancels transparently and downloads a PDF statement
 
 ## Testing (fleet)
 `npm run e2e -w @rmn/portal` does the following in Chromium:

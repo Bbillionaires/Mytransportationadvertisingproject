@@ -9,11 +9,10 @@ A passenger-facing tablet entertainment and advertising network for rideshare, t
 packages/finance-core/   Pure, exact-integer financial engine (waterfall, splits, pools, reversals) + property tests
 apps/player/             Passenger tablet web player (TypeScript, esbuild) + browser e2e test
 apps/rider/              Rider phone web app (installable PWA) + browser e2e test
-apps/portal/             Business web portal (fleet operators, advertisers, creators, platform staff; self sign-up) + browser e2e tests
+apps/portal/             Business web portal for every business user (fleet operators, drivers, advertisers, creators, platform staff) + browser e2e tests
 apps/android/            Android kiosk shell around the web player (Kotlin, Keystore device key) — see docs/ANDROID_SHELL.md
 apps/api/                Fastify API: identity, RBAC/tenancy, fleets, devices, ledger, revenue rules, allocations
   migrations/            Forward-only SQL; ledger invariants enforced by the database
-  public/index.html      Admin console shell
   test/                  Integration tests against real PostgreSQL
 docs/                    EVENTS (playback validation policy), PRD, architecture/ADRs, ERD, ledger spec, API, permissions, threat model, backlog, deployment
 ```
@@ -26,7 +25,7 @@ cp .env.example .env && $EDITOR .env          # set APP_ENCRYPTION_KEY=$(openssl
 set -a; . ./.env; set +a
 npm run db:migrate
 SEED_PASSWORD='demo-password-123' npm run db:seed   # SYNTHETIC demo data only
-npm run dev   # business portal: http://127.0.0.1:8080/portal/ (fleet1@ or advertiser@example.test)  tablet: /player/  rider: /rider/  staff use the portal too
+npm run dev   # business portal: http://127.0.0.1:8080/portal/ (fleet1@, driver11@, advertiser@, admin@ … example.test)  tablet: /player/  rider: /rider/  staff use the portal too
 # DEV_IN_PROCESS_JOBS=true (in .env.example) runs video processing, webhooks, event validation and email (printed to the console) inside npm run dev.
 # With PAYMENTS_PROVIDER=fake, "Add funds" opens a clearly labelled simulated checkout; no money moves.
 ```
@@ -35,7 +34,7 @@ npm run dev   # business portal: http://127.0.0.1:8080/portal/ (fleet1@ or adver
 ```bash
 npm run typecheck
 npm test            # 28 finance-core tests (incl. property tests) + 166 API tests (media tests need ffmpeg)
-npm run e2e         # browser end-to-end: tablet player ride (web + simulated Android key), rider phone app, fleet, advertiser, creator and staff portals
+npm run e2e         # browser end-to-end: tablet player ride (web + simulated Android key), rider phone app, fleet, driver, advertiser, creator and staff portals
 (cd apps/android && ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug)   # needs ANDROID_HOME
 ```
 The API tests reset the schema of `TEST_DATABASE_URL` (default `postgres://rmn:rmn@localhost:5432/rmn_test`).
