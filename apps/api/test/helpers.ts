@@ -13,7 +13,7 @@ export interface Ctx { app: FastifyInstance; db: Db; config: Config }
 let pwHash: string | undefined;
 
 export async function setupApp(): Promise<Ctx> {
-  const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: TEST_DB, APP_ENCRYPTION_KEY: randomBytes(32).toString('base64'), LOG_LEVEL: 'silent' });
+  const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: TEST_DB, APP_ENCRYPTION_KEY: randomBytes(32).toString('base64'), LOG_LEVEL: 'silent', ALLOCATION_SETTLE_MINUTES: '0' });
   const db = createPool(config.DATABASE_URL);
   const app = await buildApp({ config, db, logger: false });
   return { app, db, config };

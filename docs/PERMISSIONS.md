@@ -22,6 +22,8 @@ The source of truth is the `role_permissions` table (migration 0001); this table
 | finance.rules.approve | ✔ | ✔¹ | | ✔ | | | | | | |
 | finance.allocation.post | ✔ | ✔ | ✔ | | | | | | | |
 | driver.self.read | | | | | | | | ✔ | | |
+| events.validate | ✔ | ✔ | ✔ | | | | | | | |
+| events.review | ✔ | ✔ | | ✔ | | | | | | |
 
 ¹ Separation of duties applies to everyone, super admins included: nobody can approve their own journal request, rules need two approvers who are not the drafter, and DB `CHECK` constraints back this up.
 

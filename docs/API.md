@@ -93,10 +93,20 @@ Allocation request body:
 ```
 Phase 2 note: once the validated-event pipeline exists, creator/driver metrics will be computed server-side from validated aggregates, and the request will carry only the source window.
 
+### Events (session 2, see `EVENTS.md`)
+| Method | Path | Auth |
+|---|---|---|
+| POST | `/v1/devices/events` | **signed device** `{batchId, events[≤500]}` → `{received, accepted, duplicates, rejected[]}` |
+| POST | `/v1/events/validate` | `events.validate` (MFA) → `{processed, valid, invalid, held}` |
+| GET | `/v1/events/held` | `events.review` (MFA) |
+| POST | `/v1/events/review` | `events.review` `{eventIds[], decision: APPROVE\|REJECT, note}` |
+| GET | `/v1/finance/campaigns/:id/metrics?from&to` | `finance.read` |
+| POST | `/v1/finance/campaigns/:id/allocation-windows[/preview]` | `finance.allocation.post` / `finance.read` `{idempotencyKey, periodStart, periodEnd, entryDate, deductions[]}` |
+
 ## Planned (Phase 2–6, contracts to be versioned when built)
 - Media: `POST /v1/creators/:id/videos` (resumable upload → transcode → moderation HOLD), `GET /v1/videos/:id`, takedown/appeal endpoints.
 - Campaigns: `/v1/advertisers/:orgId/campaigns`, `/creatives`, `/schedules`, `/geofences`, submit-for-review; admin approval queue.
-- Tablet: `GET /v1/devices/playlist` (signed, returns signed media URLs and expirations), `POST /v1/devices/events` (batched, signed, event-ID deduped).
+- Tablet: `GET /v1/devices/playlist` (signed, returns signed media URLs and expirations).
 - Subscriptions: `/v1/drivers/me/subscription` (Stripe Billing test mode), `POST /v1/webhooks/stripe` (signature-verified inbox).
 - Attribution: `POST /v1/conversions` (advertiser API key, HMAC-signed, deduped by advertiser order ID), refunds/cancellations.
 - Payouts: `/v1/finance/payout-batches` (dual approval), provider onboarding links.

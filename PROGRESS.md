@@ -56,7 +56,31 @@ Starting point: an empty repository (no commits, no files).
 - `@rmn/finance-core`: 28 passed
 - `@rmn/api`: 38 passed (real PostgreSQL)
 
+## 2026-11-03 — Session 2: playback event pipeline (M2.6) ✅
+
+Goal: earnings must come from verified tablet data, not from numbers a caller submits.
+
+| Item | Status | Evidence |
+|---|---|---|
+| Signed event batch ingestion, (device, eventId) dedupe, per-event rejection, clock-drift correction | ✅ | `pipeline.test.ts` |
+| Append-only raw event store (immutable) | ✅ | `pipeline.test.ts` |
+| Device status history (status at event time) | ✅ | `pipeline.test.ts` |
+| `VALIDATION_POLICY_V1`: qualified views, muted handling, verified watch time, anti-idle active time | ✅ | `policy.test.ts` (8 tests) |
+| Validator: campaign/creative/video approval, campaign window, assignment, overlaps, impossible durations, duplicate clicks, per-tablet hourly rate cap, daily active cap, offline and late holds | ✅ | `pipeline.test.ts` |
+| Human review of held events (once, named reviewer, note; late events cannot be approved into allocated windows) | ✅ | `pipeline.test.ts` |
+| Allocation of a campaign window from VALID events only: creator-content vs. standalone batches, non-overlapping windows, settle delay, blocked by pending or held events | ✅ | `pipeline.test.ts` |
+| Campaign delivery metrics (impressions, qualified views, completions, skips, CTR, invalid/held counts) | ✅ | `pipeline.test.ts` |
+| Validator job script | ✅ | `npm run jobs:validate-events -w @rmn/api` |
+| Minimal campaigns/creatives/videos tables (records created via SQL; management API is M2.4/M2.7) | 🟡 | migration 0005 |
+
+Known gap: the manual `POST /v1/finance/allocations` endpoint still accepts caller-supplied metrics (kept for commissions and back-office adjustments). Before go-live, restrict AD allocations to the event-derived path, or put the manual path behind dual approval.
+
+Test totals: finance-core 28, API 56 (all passing against PostgreSQL 16).
+
 ### Next steps (in order)
-1. Phase 1 remainder: password reset/invitations, account unlock, impersonation endpoints, admin shell write actions, metrics.
-2. Phase 2: media upload and transcode pipeline, moderation queue (fail-closed), playlists and schedules, signed event ingestion (raw vs. validated), Android player skeleton on a real device.
-3. Phase 3: Stripe **test-mode** Billing for the $30 subscription, signed idempotent webhook inbox, invoices, refunds/chargebacks with allocation reversal posting, reconciliation runs, financial reports.
+1. M3.4: refunds/chargebacks → allocation reversal posting (math exists), clawback receivable.
+2. M2.4/M2.7: campaign and creative management API + advertiser portal (replaces SQL-created campaigns); tablet playlist API with signed media URLs.
+3. M2.1–M2.3: media upload/transcode, fail-closed moderation, rights and takedown.
+4. Phase 1 remainder: invitations/password reset, unlock, impersonation endpoints, metrics.
+5. Phase 3: Stripe **test-mode** Billing, webhook inbox, invoices, reconciliation, reports.
+6. M2.5 Android player: needs a real device and the hardware/EMM decision (D-017).

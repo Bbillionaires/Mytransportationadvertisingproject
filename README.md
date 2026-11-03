@@ -11,7 +11,7 @@ apps/api/                Fastify API: identity, RBAC/tenancy, fleets, devices, l
   migrations/            Forward-only SQL; ledger invariants enforced by the database
   public/index.html      Admin console shell
   test/                  Integration tests against real PostgreSQL
-docs/                    PRD, architecture/ADRs, ERD, ledger spec, API, permissions, threat model, backlog, deployment
+docs/                    EVENTS (playback validation policy), PRD, architecture/ADRs, ERD, ledger spec, API, permissions, threat model, backlog, deployment
 ```
 
 ## Quick start
@@ -28,7 +28,7 @@ npm run dev                                         # http://127.0.0.1:8080/admi
 ## Tests
 ```bash
 npm run typecheck
-npm test            # 28 finance-core tests (incl. property tests) + 38 API integration tests
+npm test            # 28 finance-core tests (incl. property tests) + 56 API tests
 ```
 The API tests reset the schema of `TEST_DATABASE_URL` (default `postgres://rmn:rmn@localhost:5432/rmn_test`).
 

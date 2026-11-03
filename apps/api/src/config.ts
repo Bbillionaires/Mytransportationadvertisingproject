@@ -10,6 +10,8 @@ const schema = z.object({
   SESSION_TTL_MINUTES: z.coerce.number().int().positive().default(480),
   DEVICE_CLOCK_SKEW_SECONDS: z.coerce.number().int().positive().default(300),
   LOG_LEVEL: z.string().default('info'),
+  /** A campaign window may be allocated only after it has been closed this long, so in-flight events arrive. */
+  ALLOCATION_SETTLE_MINUTES: z.coerce.number().int().min(0).default(60),
   /** Live money movement is hard-disabled until explicitly approved (see DECISIONS.md D-010). */
   LIVE_PAYMENTS_ENABLED: z.enum(['false']).default('false'),
 });
