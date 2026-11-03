@@ -14,7 +14,25 @@ export const COUNTABLE = `(CASE WHEN c.pricing_model = 'CPQV' THEN v.qualified E
 export interface CampaignSpend { spendMilli: bigint; todayMilli: bigint; unallocatedMilli: bigint }
 
 /** Lifetime, today (campaign-local day) and not-yet-allocated committed spend for each campaign. */
+/**
+ * Committed spend from the trigger-maintained counters (migration 0017): O(days) per campaign instead of O(plays).
+ * Equal to campaignSpendRecount() at all times; verified in tests and by the spend-counter consistency job.
+ */
 export async function campaignSpend(q: Queryable, campaignIds: string[], at: Date): Promise<Map<string, CampaignSpend>> {
+  const r = await q.query(
+    `SELECT c.id, c.pricing_model, c.rate_minor,
+            coalesce((SELECT sum(d.billable) FROM campaign_spend_daily d WHERE d.campaign_id = c.id), 0) AS n_all,
+            coalesce((SELECT sum(d.billable) FROM campaign_spend_daily d WHERE d.campaign_id = c.id AND d.day >= ($2::timestamptz AT TIME ZONE c.timezone)::date), 0) AS n_today,
+            coalesce((SELECT a.billable FROM campaign_spend_allocated a WHERE a.campaign_id = c.id), 0) AS n_allocated
+       FROM campaigns c WHERE c.id = ANY($1::uuid[])`, [campaignIds, at]);
+  return new Map(r.rows.map((x) => {
+    const u = unitMilli(x.pricing_model, BigInt(x.rate_minor));
+    return [x.id, { spendMilli: BigInt(x.n_all) * u, todayMilli: BigInt(x.n_today) * u, unallocatedMilli: (BigInt(x.n_all) - BigInt(x.n_allocated)) * u }];
+  }));
+}
+
+/** Exact recount from validated events — the reference the counters are verified against (tests, consistency job). */
+export async function campaignSpendRecount(q: Queryable, campaignIds: string[], at: Date): Promise<Map<string, CampaignSpend>> {
   const r = await q.query(
     `SELECT c.id, c.pricing_model, c.rate_minor,
             count(v.id) FILTER (WHERE ${COUNTABLE}) AS n_all,

@@ -173,3 +173,11 @@ describe('advertiser daily report', () => {
     expect((await api('GET', `/v1/orgs/${advertiser}/campaigns/${c.id}/report`, otherAdmin.h)).statusCode).toBe(403);
   });
 });
+
+describe('spend counters (R-024)', () => {
+  it('trigger-maintained counters equal an exact recount for every campaign (plays, budgets, allocation windows)', async () => {
+    const { expectSpendCountersExact } = await import('./spendcheck.js');
+    expect(await expectSpendCountersExact(ctx.db)).toBeGreaterThan(0);
+    expect(await expectSpendCountersExact(ctx.db, new Date(Date.now() + 2 * 86_400_000))).toBeGreaterThan(0); // "today" in the future
+  });
+});

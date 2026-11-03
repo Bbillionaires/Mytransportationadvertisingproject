@@ -150,3 +150,10 @@ When the hold reason clears, Dr 2400 / Cr payables per the rule version in force
 - Daily: processor balance and payouts reports vs. 1010/2500, by processor and currency.
 - Per webhook: inbox row (signature verified, unique event id) → idempotent posting key `stripe:<event_id>`.
 - Exceptions table with owner and resolution, and a period-close checklist: trial balance balanced, no pending journal requests in the period (enforced), reconciliation exceptions cleared.
+
+## Spend counters (R-024)
+Budget checks read trigger-maintained counters instead of recounting plays (migration 0017):
+- `campaign_spend_daily (campaign_id, day, billable)`: billable plays (VALID or HELD_REVIEW; qualified views for CPQV, impressions for CPM) per campaign-local day.
+- `campaign_spend_allocated (campaign_id, billable)`: billable plays inside allocated windows. Windows are allocated only with no held plays inside, and later plays inside them are refused or held, so this count is final.
+
+The triggers fire on validated-event insert and status change, on window creation, and on pricing or time-zone edits (which rebuild that campaign). `campaignSpend()` reads the counters; `campaignSpendRecount()` is the exact reference. Tests compare the two in one snapshot after budgets, allocations and human review. The nightly `jobs:verify-spend-counters` does the same, rebuilds any campaign that drifted, and exits non-zero so it alerts.

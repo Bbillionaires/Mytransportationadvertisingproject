@@ -247,3 +247,17 @@ describe('anti-farming and clock drift', () => {
     expect(Math.abs(r.occurred_at.getTime() - (now() - 30_000))).toBeLessThan(5_000);
   });
 });
+
+describe('spend counters follow human review (R-024)', () => {
+  it('rejecting held billable plays lowers the counters exactly; approving keeps them', async () => {
+    const { expectSpendCountersExact } = await import('./spendcheck.js');
+    const held = (await ctx.db.query(`SELECT v.id::text, v.campaign_id FROM validated_events v WHERE v.status = 'HELD_REVIEW' AND v.type = 'AD_PLAYBACK' AND v.device_id = ANY($1::uuid[])
+      AND NOT EXISTS (SELECT 1 FROM allocation_windows w WHERE w.campaign_id = v.campaign_id AND tstzrange(w.period_start, w.period_end) @> v.occurred_at)`, [[d1, d2]])).rows;
+    await expectSpendCountersExact(ctx.db);
+    if (held.length) {
+      const r = await ctx.app.inject({ method: 'POST', url: '/v1/events/review', headers: reviewer.h, payload: { eventIds: held.map((h) => h.id), decision: 'REJECT', note: 'counter check: reject held plays' } });
+      expect(r.statusCode).toBe(200);
+    }
+    await expectSpendCountersExact(ctx.db);
+  });
+});

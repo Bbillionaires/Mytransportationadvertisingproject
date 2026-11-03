@@ -370,9 +370,22 @@ Not done in this session: object storage + CDN for media (R-021) — needs a pro
 
 Test totals: finance-core 28, API 175, Android unit tests, browser e2e: tablet ride, rider app, fleet, driver, advertiser, creator and staff portals; media worker isolation check; load test.
 
+## 2026-11-03 — Session 22: incremental spend counters (R-024)
+
+| Item | Status | Evidence |
+|---|---|---|
+| Trigger-maintained per-campaign daily billable counters + allocated-window counts (migration 0017), including late held plays in allocated windows and pricing/time-zone rebuilds | ✅ | `budgets.test.ts` + `pipeline.test.ts`: counters equal an exact recount for every campaign in one snapshot (after budgets, windows, and rejecting held plays) |
+| Budget checks (playlist, validator, balances) read the counters | ✅ | full API suite + browser e2e |
+| Nightly consistency job: detects drift, rebuilds, exits non-zero | ✅ | verified on the load-test database: corrupted counter → drift=1, exit 1, rebuilt; next run drift=0 |
+| Backfill on migration | ✅ | load-test database with 6,000 plays: no drift after migration |
+| Validation throughput flat with history: ~160 events/s at 891 and 6,000 events (was 117 → 75) | ✅ | `docs/LOAD_TEST.md` |
+
+Bug found by the counter test and fixed: a late play held inside an already-billed window was counted as unbilled (the recount counts it inside the window).
+
+Test totals: finance-core 28, API 177, Android unit tests, browser e2e: tablet ride, rider app, fleet, driver, advertiser, creator and staff portals; media worker isolation check; load test.
+
 ### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
-1. Object storage + CDN for media (R-021): **DECISION REQUIRED** — provider (e.g. S3 + CloudFront, GCS + Cloud CDN, Cloudflare R2). Then an adapter for uploads/renditions and CDN-verified signed URLs.
-2. Incremental per-campaign spend counters in the validator (R-024) before scaling past a few thousand tablets.
-3. Android field test on one tablet with the chosen EMM (D-017); key attestation at enrollment (R-028).
-4. External penetration test (R-015) before the pilot.
-5. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).
+1. Object storage + CDN for media (R-021): **DECISION REQUIRED** — provider (e.g. S3 + CloudFront, GCS + Cloud CDN, Cloudflare R2).
+2. Android field test on one tablet with the chosen EMM (D-017); key attestation at enrollment (R-028).
+3. External penetration test (R-015) before the pilot.
+4. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).
