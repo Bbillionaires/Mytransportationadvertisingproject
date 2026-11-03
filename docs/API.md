@@ -71,6 +71,7 @@ Error codes: `UNAUTHENTICATED` 401 · `FORBIDDEN` / `MFA_REQUIRED` / `SEPARATION
 | POST | `/v1/finance/allocations` | `finance.allocation.post` — idempotent, funding-checked, posts journal |
 | GET | `/v1/finance/allocations/:id` | `finance.read` |
 | GET | `/v1/finance/payables` | `finance.read` — from ledger balances |
+| POST | `/v1/finance/allocations/:id/reversal-requests` | `finance.journal.request` `{idempotencyKey, type: REFUND\|CHARGEBACK\|CREDIT, amount, entryDate, reason, processor?}` → request + proportional plan; approved via journal-requests decision |
 
 Allocation request body:
 ```json

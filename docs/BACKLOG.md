@@ -30,7 +30,7 @@ Each milestone is done only when its criteria pass in CI against PostgreSQL. It 
 - **M3.1 Stripe test-mode Billing** for the $30 driver subscription. *AC:* subscription receipts post only to 4200; cancellation transparent.
 - **M3.2 Webhook inbox:** signature verification, unique event ids, retries, outbox. *AC:* duplicate webhooks never double-post.
 - **M3.3 Invoices and advertiser prepayments** with tax lines (2100).
-- **M3.4 Refunds/chargebacks → allocation reversals** via `proportionalReversal`; clawback receivable for paid shares. *AC:* invariant 9.
+- ✅ **M3.4 Refunds/chargebacks → allocation reversals** (session 3) via `proportionalReversal`; clawback receivable for paid shares. *AC:* invariant 9.
 - **M3.5 Reconciliation runs** and exception queue; period-close checklist.
 - **M3.6 Reports:** GL, trial balance, P&L, balance sheet, cash flow, receivables, liabilities, CSV/PDF.
 

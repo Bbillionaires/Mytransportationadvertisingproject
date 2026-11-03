@@ -93,6 +93,7 @@ export async function reverseEntry(tx: Tx, entryId: string, opts: { idempotencyK
   const orig = await tx.query('SELECT id, source_type FROM journal_entries WHERE id = $1', [entryId]);
   if (!orig.rows[0]) throw unprocessable('entry to reverse does not exist');
   if (orig.rows[0].source_type === 'REVERSAL') throw unprocessable('reversals cannot themselves be reversed; post a new correcting entry');
+  if (orig.rows[0].source_type === 'ALLOCATION') throw unprocessable('allocation entries are reversed through allocation reversal requests, which track each recipient line');
   const lines = await tx.query('SELECT * FROM journal_lines WHERE entry_id = $1 ORDER BY line_no', [entryId]);
   return postEntry(tx, {
     idempotencyKey: opts.idempotencyKey,

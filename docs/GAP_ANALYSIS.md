@@ -22,5 +22,5 @@
 | Modular integration architecture | Module boundaries, versioned `/v1` REST | Webhooks out, scoped API keys/OAuth, module registry | 4–6 |
 | Core schema | Identity, tenancy, fleets, devices, ledger, rules, allocations | See `ERD.md` planned list | 2–6 |
 | Security / ops / compliance | See `THREAT_MODEL.md` | RLS, non-owner DB role automation, metrics/tracing, backups runbook, secret manager, pen test | 1, 6 |
-| Testing invariants | #1, #2, #3, #4, #5, #6, #7 (allocations, journal posts, device replay), #8, #14 tested; #10 partly (subscription isolated from pools) | #9 refunds posting, #10 payouts, #11 rider sessions, #13 moderation (#12 offline events done in session 2) | 2–5 |
+| Testing invariants | #1, #2, #3, #4, #5, #6, #7 (allocations, journal posts, device replay), #8, #14 tested; #10 partly (subscription isolated from pools) | #10 payouts, #11 rider sessions, #13 moderation (#12 offline events done in session 2; #9 refunds/chargebacks done in session 3) | 2–5 |
 | Phased delivery | Phase 0 done; Phase 1 mostly done; Phase 3/4 calculation core done | See `BACKLOG.md` | — |

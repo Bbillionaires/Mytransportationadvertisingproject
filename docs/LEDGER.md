@@ -120,8 +120,22 @@ Dr 1100 20.00 / Cr 2210 3.00 / Cr 2200 2.00 / Cr 4100 15.00.
 ### 5.5 Driver $30 subscription (Phase 3; never enters any pool)
 Dr 1010 30.00 / Cr 4200 Driver subscription revenue [driver] 30.00, then the fee: Dr 5000 / Cr 1010.
 
-### 5.6 Refund of $100.00 of earned spend after allocation (Phase 3, D-021)
-`proportionalReversal` spreads the refund's net effect across the original lines in proportion to their un-reversed amounts (never exceeding any line). Unpaid shares: Dr 2200/2210/4000/... / Cr 2000. Shares already paid out: Dr **1200 Clawback receivable** instead of the payable. The refund to the advertiser is a separate cash entry: Dr 2000 / Cr 2600, then Dr 2600 / Cr 1010.
+### 5.6 Refund, chargeback or credit after allocation (implemented, D-021, D-030)
+`POST /v1/finance/allocations/:id/reversal-requests` → a different approver decides via `/v1/finance/journal-requests/:id/decision`.
+The amount is spread over **every** allocation line of the batch (payables, platform, held, rounding and deduction recoveries) in proportion to what each line has left un-reversed, using largest remainder. A line can never be reversed beyond its original amount: this is checked in code and by a DB trigger.
+
+Example: a $100.00 refund of the §5.2 batch reverses exactly 10% of each line (A: 35,236¢ → 3,524¢ after rounding):
+
+| Account | Dr | Cr |
+|---|---:|---:|
+| 5001 fees recovered (platform absorbs the unrefunded fee) | 2.93 | |
+| 2210 Driver payable [D1] / [D2] | 2.73 / 2.12 | |
+| 2200 Creator payable [A] / [B] | 35.24 / 23.01 | |
+| 4000 Platform share | 33.97 | |
+| **2600 Refunds payable [advertiser]** (REFUND) · **1010 Processor clearing** (CHARGEBACK) · **funding account 2000/1100** (CREDIT) | | 100.00 |
+
+Shares already **PAID** are debited to **1200 Recipient clawback receivable** [recipient] instead of the payable. Paying the refund to the advertiser is a separate cash entry (Dr 2600 / Cr 1010).
+Generic journal reversal of an allocation entry is refused, so per-recipient tracking can't be bypassed.
 
 ### 5.7 Payout of $352.36 to creator A (Phase 4)
 Submit: Dr 2200 [A] / Cr 2500 [A]. Provider confirms: Dr 2500 / Cr 1000. Provider fails: Dr 2500 / Cr 2200 (restores payable). A payout can never exceed the approved payable balance (to be enforced with a row lock on the recipient's balance, like D-015).

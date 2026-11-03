@@ -7,6 +7,7 @@ import { conflict, forbidden, notFound } from '../../lib/errors.js';
 import { currency, idemKey, isoDate, minor, parse, uuid } from '../../lib/validation.js';
 import { actorOf, authorize } from '../../auth/context.js';
 import { calculateAllocation, calculationToJson, postAllocation, type AllocationRequest } from './service.js';
+import { planReversal, planToJson } from './reversals.js';
 
 const ruleDraft = z.object({
   category: z.enum(['CREATOR_CONTENT_AD', 'STANDALONE_AD', 'SALES_COMMISSION_WITH_CREATOR', 'SALES_COMMISSION_NO_CREATOR']),
@@ -124,8 +125,38 @@ export async function revenueRoutes(app: FastifyInstance, { db }: { db: Db }) {
     const { id } = parse(z.object({ id: uuid }), req.params);
     const b = await db.query('SELECT * FROM allocation_batches WHERE id = $1', [id]);
     if (!b.rows[0]) throw notFound();
-    const l = await db.query('SELECT line_kind, party_id, amount, status, basis FROM allocation_lines WHERE batch_id = $1 ORDER BY id', [id]);
-    return { ...b.rows[0], lines: l.rows };
+    const l = await db.query(
+      `SELECT l.id::text, l.line_kind, l.party_id, l.amount, l.status, l.basis, coalesce(sum(r.amount), 0)::text AS reversed
+         FROM allocation_lines l LEFT JOIN allocation_reversal_lines r ON r.allocation_line_id = l.id WHERE l.batch_id = $1 GROUP BY l.id ORDER BY l.id`, [id]);
+    const rv = await db.query('SELECT id, type, amount, settlement_account, reason, journal_entry_id, requested_by, approved_by, created_at FROM allocation_reversals WHERE batch_id = $1 ORDER BY created_at', [id]);
+    return { ...b.rows[0], lines: l.rows, reversals: rv.rows };
+  });
+
+  /**
+   * Request a refund, chargeback or credit against a posted batch. The proportional plan is validated now and
+   * recomputed at approval; a different user with finance.journal.approve must approve it (journal-requests decision).
+   */
+  app.post('/v1/finance/allocations/:id/reversal-requests', async (req, reply) => {
+    const auth = await authorize(db, req, 'finance.journal.request');
+    const { id } = parse(z.object({ id: uuid }), req.params);
+    const b = parse(z.object({
+      idempotencyKey: idemKey, type: z.enum(['REFUND', 'CHARGEBACK', 'CREDIT']), amount: minor, entryDate: isoDate,
+      reason: z.string().min(10).max(2000), processor: z.string().min(2).max(50).optional(),
+    }), req.body);
+    if (b.amount <= 0n) throw conflict('amount must be positive');
+    if (b.type === 'CHARGEBACK' && !b.processor) throw conflict('a chargeback must name the processor');
+    const plan = await planReversal(db, { batchId: id, type: b.type, amount: b.amount });
+    const r = await withTx(db, async (tx) => {
+      const prior = await tx.query('SELECT * FROM journal_requests WHERE idempotency_key = $1', [b.idempotencyKey]);
+      if (prior.rows[0]) return prior.rows[0];
+      const jr = await tx.query(
+        `INSERT INTO journal_requests (idempotency_key, requested_by, reason, payload) VALUES ($1,$2,$3,$4) RETURNING *`,
+        [b.idempotencyKey, auth.userId, b.reason, JSON.stringify({ kind: 'ALLOCATION_REVERSAL', batchId: id, type: b.type, amount: b.amount.toString(), entryDate: b.entryDate, processor: b.processor ?? null })]);
+      await audit(tx, actorOf(req), 'finance.allocation_reversal_requested', { type: 'allocation_batch', id }, { type: b.type, amount: b.amount.toString(), requestId: jr.rows[0].id });
+      return jr.rows[0];
+    });
+    reply.code(201);
+    return { request: r, plan: planToJson(plan) };
   });
 
   /** Payable balances per recipient, from the ledger (source of truth), not from allocation rows. */

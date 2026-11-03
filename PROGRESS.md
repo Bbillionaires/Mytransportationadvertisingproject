@@ -77,10 +77,22 @@ Known gap: the manual `POST /v1/finance/allocations` endpoint still accepts call
 
 Test totals: finance-core 28, API 56 (all passing against PostgreSQL 16).
 
+## 2026-11-03 — Session 3: refunds, chargebacks and credits (M3.4) ✅
+
+| Item | Status | Evidence |
+|---|---|---|
+| Reversal requests against posted allocation batches (REFUND → 2600, CHARGEBACK → 1010 with processor, CREDIT → funding account) | ✅ | `reversals.test.ts` |
+| Proportional spread over all batch lines via largest remainder; cumulative cap per line (code + DB trigger) | ✅ | `reversals.test.ts` |
+| Already-paid recipient shares → 1200 clawback receivable (D-021) | ✅ | `reversals.test.ts` |
+| Dual approval (requester ≠ approver), idempotent, fully reversed lines marked REVERSED | ✅ | `reversals.test.ts` |
+| Generic journal reversal of allocation entries blocked | ✅ | `reversals.test.ts` |
+| Batch detail shows per-line reversed amounts and reversal history | ✅ | `reversals.test.ts` |
+
+Spec invariant 9 (refunds/chargebacks produce balanced reversals and valid liability updates) is now covered. Test totals: finance-core 28, API 62.
+
 ### Next steps (in order)
-1. M3.4: refunds/chargebacks → allocation reversal posting (math exists), clawback receivable.
-2. M2.4/M2.7: campaign and creative management API + advertiser portal (replaces SQL-created campaigns); tablet playlist API with signed media URLs.
-3. M2.1–M2.3: media upload/transcode, fail-closed moderation, rights and takedown.
-4. Phase 1 remainder: invitations/password reset, unlock, impersonation endpoints, metrics.
-5. Phase 3: Stripe **test-mode** Billing, webhook inbox, invoices, reconciliation, reports.
-6. M2.5 Android player: needs a real device and the hardware/EMM decision (D-017).
+1. M2.4/M2.7: campaign and creative management API + advertiser portal (replaces SQL-created campaigns); tablet playlist API with signed media URLs.
+2. M2.1–M2.3: media upload/transcode, fail-closed moderation, rights and takedown.
+3. Phase 1 remainder: invitations/password reset, unlock, impersonation endpoints, metrics.
+4. Phase 3: Stripe **test-mode** Billing, webhook inbox, invoices, reconciliation, reports.
+5. M2.5 Android player: needs a real device and the hardware/EMM decision (D-017).

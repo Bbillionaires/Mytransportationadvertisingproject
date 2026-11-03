@@ -7,6 +7,7 @@ import { conflict, forbidden, notFound, unprocessable } from '../../lib/errors.j
 import { currency, idemKey, isoDate, minor, parse, uuid } from '../../lib/validation.js';
 import { actorOf, authorize } from '../../auth/context.js';
 import { postEntry, reverseEntry, trialBalance, validateEntry, type EntryInput } from './service.js';
+import { postReversal } from '../revenue/reversals.js';
 
 const lineSchema = z.object({
   accountCode: z.string().regex(/^\d{4}$/),
@@ -124,8 +125,9 @@ export async function ledgerRoutes(app: FastifyInstance, { db }: { db: Db }) {
     const auth = await authorize(db, req, 'finance.journal.request');
     const { id } = parse(z.object({ id: uuid }), req.params);
     const b = parse(z.object({ idempotencyKey: idemKey, entryDate: isoDate, reason: z.string().min(10).max(2000) }), req.body);
-    const e = await db.query('SELECT id FROM journal_entries WHERE id = $1', [id]);
+    const e = await db.query('SELECT id, source_type FROM journal_entries WHERE id = $1', [id]);
     if (!e.rows[0]) throw notFound('entry not found');
+    if (e.rows[0].source_type === 'ALLOCATION') throw unprocessable('use /v1/finance/allocations/:id/reversal-requests to reverse allocation entries');
     const jr = await db.query(
       `INSERT INTO journal_requests (idempotency_key, requested_by, reason, payload) VALUES ($1,$2,$3,$4) ON CONFLICT (idempotency_key) DO NOTHING RETURNING *`,
       [b.idempotencyKey, auth.userId, b.reason, JSON.stringify({ kind: 'REVERSAL', entryId: id, entryDate: b.entryDate })],
@@ -166,6 +168,11 @@ export async function ledgerRoutes(app: FastifyInstance, { db }: { db: Db }) {
           idempotencyKey: `manual:${jr.idempotency_key}`, entryDate: p.entryDate, description: p.description, sourceType: p.sourceType,
           postedBy: jr.requested_by, approvedBy: auth.userId, lines: deserializeLines(p.lines), metadata: { journalRequestId: id, reason: jr.reason },
         });
+      } else if (p.kind === 'ALLOCATION_REVERSAL') {
+        const r = await postReversal(tx, {
+          idempotencyKey: jr.idempotency_key, batchId: p.batchId, type: p.type, amount: BigInt(p.amount), entryDate: p.entryDate, reason: jr.reason, processor: p.processor ?? null,
+        }, jr.requested_by, auth.userId);
+        posted = { id: r.journalEntryId };
       } else throw unprocessable('unknown request kind');
       const u = await tx.query(
         `UPDATE journal_requests SET status = 'APPROVED', decided_by = $2, decided_at = now(), decision_note = $3, journal_entry_id = $4 WHERE id = $1 RETURNING *`,
