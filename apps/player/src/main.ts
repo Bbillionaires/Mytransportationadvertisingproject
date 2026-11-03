@@ -257,7 +257,7 @@ async function signIn() {
   const p = await state.device!.call('POST', '/v1/devices/rider-pairings', {});
   let open = true;
   onOverlayClose(() => { open = false; });
-  openOverlay('Sign in with your phone', qrSvg(p.qrPayload, 'Sign-in QR code'), el('p', {}, 'Open the rider app on your phone and scan, or enter this code:'), el('p', { class: 'code', id: 'pair-code' }, p.code));
+  openOverlay('Sign in with your phone', qrSvg(p.qrPayload, 'Sign-in QR code'), el('p', {}, "Point your phone's camera at the code to sign in, or enter this code in the rider app:"), el('p', { class: 'code', id: 'pair-code' }, p.code));
   const until = new Date(p.expiresAt).getTime();
   while (open && Date.now() < until) {
     await sleep(T.pairPoll);

@@ -67,7 +67,7 @@ describe('rider accounts', () => {
 describe('QR sign-in on a tablet', () => {
   it('pairs once, hands the token to the tablet once, and the session only works on that tablet', async () => {
     const p = (await tablet.call('POST', '/v1/devices/rider-pairings', {})).json();
-    expect(p.qrPayload).toMatch(/^RMNPAIR:[A-Z2-9]{8}$/);
+    expect(p.qrPayload).toMatch(/\/rider\/\?pair=[A-Z2-9]{8}$/);
     expect((await tablet.call('GET', `/v1/devices/rider-pairings/${p.pairingId}`)).json().status).toBe('WAITING');
     expect((await api('POST', '/v1/riders/pair', rider.h, { code: p.qrPayload })).json().paired).toBe(true);
     expect((await api('POST', '/v1/riders/pair', rider.h, { code: p.code })).statusCode).toBe(400); // single use

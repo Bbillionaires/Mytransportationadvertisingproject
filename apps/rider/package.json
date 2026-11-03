@@ -1,0 +1,16 @@
+{
+  "name": "@rmn/rider",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Rider phone web app (installable PWA): sign in on tablets by QR, wallet of coupons and rewards.",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc -p . && tsc -p tsconfig.sw.json",
+    "e2e": "node build.mjs && tsx e2e/rider.e2e.ts"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "tsx": "^4.23.15"
+  }
+}

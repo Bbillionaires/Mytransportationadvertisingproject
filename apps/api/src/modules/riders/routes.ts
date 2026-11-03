@@ -135,6 +135,41 @@ export async function riderRoutes(app: FastifyInstance, { db, config }: { db: Db
     return { deleted: true };
   });
 
+  app.patch('/v1/riders/me', async (req) => {
+    const r = await phoneRider(db, req);
+    const b = parse(z.object({ displayName: z.string().min(1).max(50).optional(), marketingOptIn: z.boolean().optional() }), req.body);
+    const u = await db.query(`UPDATE riders SET display_name = coalesce($2, display_name), marketing_opt_in = coalesce($3, marketing_opt_in) WHERE id = $1 RETURNING display_name, marketing_opt_in`,
+      [r.id, b.displayName ?? null, b.marketingOptIn ?? null]);
+    return { displayName: u.rows[0].display_name, marketingOptIn: u.rows[0].marketing_opt_in };
+  });
+
+  app.post('/v1/riders/password-reset/request', { config: { rateLimit: { max: 5, timeWindow: '10 minutes' } } }, async (req, reply) => {
+    const { email } = parse(z.object({ email: z.string().email() }), req.body);
+    await withTx(db, async (tx) => {
+      const r = (await tx.query(`SELECT id, email FROM riders WHERE email = $1 AND status = 'ACTIVE'`, [email])).rows[0];
+      if (!r) return;
+      const token = randomToken(32);
+      await tx.query(`UPDATE rider_tokens SET used_at = now() WHERE rider_id = $1 AND kind = 'PASSWORD_RESET' AND used_at IS NULL`, [r.id]);
+      await tx.query(`INSERT INTO rider_tokens (rider_id, kind, token_hash, expires_at) VALUES ($1,'PASSWORD_RESET',$2, now() + interval '30 minutes')`, [r.id, sha256hex(token)]);
+      await enqueueEmail(tx, r.email, 'rider_password_reset', 'Reset your rider password',
+        `Choose a new password within 30 minutes:\n${config.APP_PUBLIC_URL}/rider/?reset=${encodeURIComponent(token)}\n\nIf you didn't ask for this, ignore this email.`);
+    });
+    reply.code(202);
+    return { message: 'If an account exists for that address, a reset link has been sent.' };
+  });
+
+  app.post('/v1/riders/password-reset/confirm', { config: { rateLimit: { max: 10, timeWindow: '10 minutes' } } }, async (req) => {
+    const b = parse(z.object({ token: z.string().min(20).max(200), newPassword: passwordSchema }), req.body);
+    return withTx(db, async (tx) => {
+      const t = (await tx.query(`SELECT * FROM rider_tokens WHERE token_hash = $1 AND kind = 'PASSWORD_RESET' FOR UPDATE`, [sha256hex(b.token)])).rows[0];
+      if (!t || t.used_at || new Date(t.expires_at) < new Date()) throw badRequest('this link is invalid or has expired');
+      await tx.query('UPDATE rider_tokens SET used_at = now() WHERE id = $1', [t.id]);
+      await tx.query(`UPDATE riders SET password_hash = $2, email_verified_at = coalesce(email_verified_at, now()) WHERE id = $1`, [t.rider_id, await hashPassword(b.newPassword)]);
+      await tx.query(`UPDATE rider_tokens SET used_at = now() WHERE rider_id = $1 AND kind IN ('PHONE_SESSION','TABLET_SESSION') AND used_at IS NULL`, [t.rider_id]);
+      return { reset: true };
+    });
+  });
+
   // ---------- QR pairing: tablet shows a code, rider scans with phone ----------
   app.post('/v1/devices/rider-pairings', { config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
     const dev = await authenticateDevice(db, config, req);
@@ -144,14 +179,18 @@ export async function riderRoutes(app: FastifyInstance, { db, config }: { db: Db
     const p = await db.query(`INSERT INTO rider_pairings (device_id, code_hash, expires_at) VALUES ($1,$2, now() + make_interval(secs => $3)) RETURNING id, expires_at`,
       [dev.deviceId, sha256hex(code), PAIRING_SECONDS]);
     reply.code(201);
-    return { pairingId: p.rows[0].id, code, qrPayload: `RMNPAIR:${code}`, expiresAt: p.rows[0].expires_at };
+    // The QR is a plain https link: the phone's built-in camera opens the rider web app, which pairs immediately.
+    return { pairingId: p.rows[0].id, code, qrPayload: `${config.APP_PUBLIC_URL}/rider/?pair=${code}`, expiresAt: p.rows[0].expires_at };
   });
 
   app.post('/v1/riders/pair', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req) => {
     const r = await phoneRider(db, req);
     if (!r.email_verified_at) throw forbidden('confirm your email before signing in on a tablet', 'EMAIL_NOT_VERIFIED');
-    const { code } = parse(z.object({ code: z.string().regex(/^(RMNPAIR:)?[A-Za-z2-9]{8}$/) }), req.body);
-    const clean = code.replace(/^RMNPAIR:/, '').toUpperCase();
+    const { code } = parse(z.object({ code: z.string().max(300) }), req.body);
+    // Accept the bare code, the legacy RMNPAIR: payload, or the full deep link.
+    const m = /(?:^|RMNPAIR:|[?&]pair=)([A-Za-z2-9]{8})(?:$|&)/.exec(code.trim());
+    if (!m) throw badRequest('enter the 8-character code shown on the tablet');
+    const clean = m[1]!.toUpperCase();
     return withTx(db, async (tx) => {
       const p = (await tx.query(`SELECT * FROM rider_pairings WHERE code_hash = $1 FOR UPDATE`, [sha256hex(clean)])).rows[0];
       if (!p || p.paired_at || new Date(p.expires_at) < new Date()) throw badRequest('this code has expired; ask the tablet for a new one');

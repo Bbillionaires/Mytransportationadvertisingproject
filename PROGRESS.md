@@ -233,8 +233,22 @@ Test totals: finance-core 28, API 153.
 
 Test totals: finance-core 28, API 153, plus the browser e2e ride.
 
+## 2026-11-03 — Session 13: rider phone web app (installable PWA) ✅
+
+| Item | Status | Evidence |
+|---|---|---|
+| `apps/rider` at `/rider/`: create account, email confirmation, sign in/out, password reset, profile, delete account | ✅ | rider browser e2e (Pixel 7 emulation) |
+| Connect to a tablet: phone camera on the QR deep link, in-app scanner (BarcodeDetector), or typed code; pending link pairs after sign-in | ✅ | rider e2e (camera path simulated by opening the QR link) |
+| Wallet with QR + code for checkout; offline via service worker app shell + saved wallet | ✅ | rider e2e (offline reload) |
+| Server: rider password reset, profile update, deep-link pairing QR | ✅ | API tests + e2e |
+| CI runs both browser e2e suites | ✅ written | not yet run on GitHub |
+
+Bug found by e2e and fixed: the `?pair=` deep link was re-wrapped before parsing, so it never paired.
+In-app camera scanning is not exercised by automation (no camera/BarcodeDetector in headless Linux); verify on a real phone.
+
+Test totals: finance-core 28, API 153, browser e2e: tablet ride + rider app.
+
 ### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
-1. Rider phone web app (scan the tablet QR, sign in, wallet) — installable PWA.
-2. Android kiosk shell around the web player + CI build (field test needs one device and D-017).
-3. Upgraded business web portals (advertiser, creator, driver, fleet, staff).
-4. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).
+1. Android kiosk shell around the web player + CI build (field test needs one device and D-017).
+2. Upgraded business web portals (advertiser, creator, driver, fleet, staff).
+3. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).

@@ -42,4 +42,4 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: npm ci
       - run: npm i --no-save playwright@1.63.0 && npx playwright install --with-deps chromium
-      - run: npm run e2e
+      - run: npm run e2e  # tablet player ride + rider phone app

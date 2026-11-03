@@ -177,6 +177,9 @@ See `ACCOUNTS.md`. Self-registration now returns `202 {status: PENDING_VERIFICAT
 ### Riders, proximity, games and rewards (session 11)
 See `RIDERS.md`. Integration keys now accept `scopes: ['conversions:write' | 'rewards:redeem']`.
 
+### Rider phone app support (session 13)
+`POST /v1/riders/password-reset/request`, `POST /v1/riders/password-reset/confirm`, `PATCH /v1/riders/me`; tablet pairing `qrPayload` is now a deep link `…/rider/?pair=CODE`. See `RIDER_APP.md`.
+
 ## Planned (Phase 2–6, contracts to be versioned when built)
 - Media: creator playlists/series, object-store adapter, virus scanning.
 - Campaigns: geofences and per-campaign budgets.

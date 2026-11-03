@@ -54,6 +54,7 @@ Status legend: **ADOPTED** = engineering decision in force · **DECISION REQUIRE
 | D-048 | Rider data minimization | ADOPTED | Birth year only (no full date of birth); no rider–location link; tablet sessions are device-bound, 30 minutes, purged at drop-off; self-service deletion erases personal data. Retention of anonymized wallet codes follows the coupon/reward expiry. | — |
 | D-049 | Tablet client architecture | ADOPTED (product owner, session 12) | Web-first: the full tablet experience is a web app (`apps/player`); a thin native Android shell adds kiosk mode, Keystore keys, background location, media caching and EMM config. The same web player serves demos and non-Android screens. | — |
 | D-050 | Ad landing pages on a shared screen | ADOPTED | Default is a QR code to open the offer on the passenger's own phone (private, and works with sites that refuse framing); the in-tablet view is secondary, sandboxed, with an always-visible "Back to ride". | — |
+| D-051 | Rider app distribution | ADOPTED | Installable web app (PWA) rather than store apps for launch; the tablet QR is a plain https deep link so the phone camera opens it without any install. Native store apps can follow if push notifications or wallet passes are needed. | — |
 
 ## How a decision is recorded
 Change the row to ADOPTED (or a new version), and add the date, the decision owner, and a link to the signed document or meeting minute. Any change to a split, rounding, eligibility or attribution policy requires a **new rule/policy version**; existing posted calculations are never recomputed.
