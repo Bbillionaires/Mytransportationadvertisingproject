@@ -17,7 +17,9 @@
     "test:api": "npm run test -w @rmn/api",
     "db:migrate": "npm run db:migrate -w @rmn/api",
     "db:seed": "npm run db:seed -w @rmn/api",
-    "dev": "npm run dev -w @rmn/api"
+    "dev": "npm run build -w @rmn/player && npm run dev -w @rmn/api",
+    "build:player": "npm run build -w @rmn/player",
+    "e2e": "npm run e2e -w @rmn/player"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",

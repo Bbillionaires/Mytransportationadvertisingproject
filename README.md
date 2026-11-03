@@ -7,6 +7,7 @@ A passenger-facing tablet entertainment and advertising network for rideshare, t
 ## Repository layout
 ```
 packages/finance-core/   Pure, exact-integer financial engine (waterfall, splits, pools, reversals) + property tests
+apps/player/             Passenger tablet web player (TypeScript, esbuild) + browser e2e test
 apps/api/                Fastify API: identity, RBAC/tenancy, fleets, devices, ledger, revenue rules, allocations
   migrations/            Forward-only SQL; ledger invariants enforced by the database
   public/index.html      Admin console shell
@@ -22,13 +23,14 @@ cp .env.example .env && $EDITOR .env          # set APP_ENCRYPTION_KEY=$(openssl
 set -a; . ./.env; set +a
 npm run db:migrate
 SEED_PASSWORD='demo-password-123' npm run db:seed   # SYNTHETIC demo data only
-npm run dev                                         # http://127.0.0.1:8080/admin/
+npm run dev                                         # admin: http://127.0.0.1:8080/admin/  tablet player: /player/
 ```
 
 ## Tests
 ```bash
 npm run typecheck
 npm test            # 28 finance-core tests (incl. property tests) + 153 API tests (media tests need ffmpeg)
+npm run e2e         # browser end-to-end ride through the tablet player (Playwright + ffmpeg)
 ```
 The API tests reset the schema of `TEST_DATABASE_URL` (default `postgres://rmn:rmn@localhost:5432/rmn_test`).
 

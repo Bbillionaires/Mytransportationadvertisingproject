@@ -115,5 +115,23 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
   app.get('/admin', sendAdmin);
   app.get('/admin/', sendAdmin);
   app.get('/', async (_req, reply) => reply.redirect('/admin/'));
+
+  // Passenger tablet web player (apps/player, built with `npm run build -w @rmn/player`). Fixed file list; no directory serving.
+  const playerDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../player/dist');
+  const mediaOrigin = new URL(config.MEDIA_BASE_URL).origin;
+  const PLAYER_FILES: Record<string, string> = { '': 'index.html', 'index.html': 'index.html', 'player.js': 'player.js', 'player.js.map': 'player.js.map', 'player.css': 'player.css' };
+  const TYPES: Record<string, string> = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', map: 'application/json', css: 'text/css; charset=utf-8' };
+  app.get('/player', async (_req, reply) => reply.redirect('/player/'));
+  app.get('/player/:file', async (req, reply) => {
+    const f = PLAYER_FILES[(req.params as { file: string }).file];
+    if (!f) return reply.code(404).send();
+    const body = await readFile(path.join(playerDir, f)).catch(() => null);
+    if (!body) return reply.code(404).type('text/plain').send('player not built: run npm run build -w @rmn/player');
+    if (f === 'index.html') reply.header('content-security-policy',
+      `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: ${mediaOrigin}; media-src 'self' blob: ${mediaOrigin}; connect-src 'self'; frame-src https:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`)
+      .header('permissions-policy', 'geolocation=(self), camera=(), microphone=()');
+    return reply.type(TYPES[f.split('.').pop()!]!).header('cache-control', f === 'index.html' ? 'no-cache' : 'public, max-age=300').send(body);
+  });
+  app.get('/player/', async (req, reply) => reply.redirect(`/player/index.html${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`));
   return app;
 }

@@ -218,6 +218,23 @@ Risk R-019 mitigated. Test totals: finance-core 28, API 138.
 
 Test totals: finance-core 28, API 153.
 
+## 2026-11-03 — Session 12: web tablet player (D-049 web-first) ✅
+
+| Item | Status | Evidence |
+|---|---|---|
+| `apps/player`: TypeScript web player served at `/player/` with strict CSP | ✅ | browser e2e |
+| Enrollment with a non-extractable WebCrypto Ed25519 key; signed requests matching the server verifier; clock-offset tracking | ✅ | browser e2e |
+| Playback: content, ad breaks (priority, frequency cap, expiry), banners, skip countdown, Next; "Advertisement" header | ✅ | browser e2e + screenshots |
+| Exposure measurement (visible/unmuted time), offline IndexedDB event queue, signed batch upload | ✅ | events validated server-side in e2e |
+| Ad taps with QR-to-phone + sandboxed in-tablet view; coupons; rider QR sign-in (token in memory only); trivia/memory games with rewards; silent proximity alerts | ✅ | browser e2e |
+| Fleet commands (suspend/resume/refresh/purge) and heartbeat | ✅ | browser e2e |
+| CI job running the browser e2e (Playwright + ffmpeg) | ✅ written | `.github/workflows/ci.yml` (not yet run on GitHub) |
+| Fixed during e2e: `hidden` overridden by component CSS; `/player/` redirect dropped the query string | ✅ | |
+
+Test totals: finance-core 28, API 153, plus the browser e2e ride.
+
 ### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
-1. M2.5 Android player (needs a real device and D-017).
-2. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).
+1. Rider phone web app (scan the tablet QR, sign in, wallet) — installable PWA.
+2. Android kiosk shell around the web player + CI build (field test needs one device and D-017).
+3. Upgraded business web portals (advertiser, creator, driver, fleet, staff).
+4. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).
