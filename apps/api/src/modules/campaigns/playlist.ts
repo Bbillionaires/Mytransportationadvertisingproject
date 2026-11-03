@@ -12,6 +12,9 @@ import { advertiserAvailableMilli, campaignSpend, nextPlayBlock } from './budget
  * and its advertiser has a positive prepaid balance. Media links are signed and expire with the playlist.
  * The validator re-checks every rule server-side, so a stale or tampered playlist cannot create billable events.
  */
+/** Per-process cache of each campaign's budget decision (see PLAYLIST_BUDGET_CACHE_MS). */
+const budgetCache = new Map<string, { live: boolean; until: number }>();
+
 export async function playlistRoutes(app: FastifyInstance, { db, config }: { db: Db; config: Config }) {
   app.get('/v1/devices/playlist', async (req) => {
     const dev = await authenticateDevice(db, config, req);
@@ -33,13 +36,25 @@ export async function playlistRoutes(app: FastifyInstance, { db, config }: { db:
       [now, market]);
     const scheduled = campaigns.rows.filter((c) => isScheduleActive({ timezone: c.timezone, daysOfWeek: c.days_of_week, startMinute: c.start_minute, endMinute: c.end_minute }, now));
     // Stop serving campaigns whose budget, daily budget or advertiser funds cannot cover one more billable play.
-    const spend = await campaignSpend(db, scheduled.map((c) => c.id), now);
-    const available = new Map<string, bigint>();
-    for (const c of scheduled) {
-      const k = `${c.advertiser_org_id}:${c.currency}`;
-      if (!available.has(k)) available.set(k, await advertiserAvailableMilli(db, c.advertiser_org_id, c.currency.trim(), now));
+    // The decision is cached per campaign for PLAYLIST_BUDGET_CACHE_MS (load test, R-024): counting spend on every
+    // playlist request grows with campaign history. Billing is unaffected — the validator re-checks exactly, so at
+    // most one cache window of extra plays can be served after a limit is reached, and those are never billed.
+    const ttl = config.PLAYLIST_BUDGET_CACHE_MS ?? 0;
+    const liveNow = new Map<string, boolean>(); // this request's fresh decisions
+    const stale = scheduled.filter((c) => !(ttl > 0 && (budgetCache.get(c.id)?.until ?? 0) > Date.now()));
+    if (stale.length) {
+      const spend = await campaignSpend(db, stale.map((c) => c.id), now);
+      const available = new Map<string, bigint>();
+      for (const c of stale) {
+        const k = `${c.advertiser_org_id}:${c.currency}`;
+        if (!available.has(k)) available.set(k, await advertiserAvailableMilli(db, c.advertiser_org_id, c.currency.trim(), now));
+        const live = nextPlayBlock(c, spend.get(c.id)!, available.get(k)!) === null;
+        if (ttl > 0) budgetCache.set(c.id, { live, until: Date.now() + ttl });
+        else budgetCache.delete(c.id);
+        liveNow.set(c.id, live);
+      }
     }
-    const live = scheduled.filter((c) => nextPlayBlock(c, spend.get(c.id)!, available.get(`${c.advertiser_org_id}:${c.currency}`)!) === null);
+    const live = scheduled.filter((c) => liveNow.get(c.id) ?? budgetCache.get(c.id)?.live ?? false);
     const creatives = await db.query(`SELECT * FROM creatives WHERE campaign_id = ANY($1::uuid[]) AND status = 'APPROVED' ORDER BY created_at`, [live.map((c) => c.id)]);
     const offers = await db.query(
       `SELECT DISTINCT ON (campaign_id) campaign_id, coupon_description FROM commission_offers

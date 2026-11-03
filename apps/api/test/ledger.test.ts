@@ -49,7 +49,7 @@ describe('ledger integrity (database-enforced)', () => {
   it('posted entries and lines are immutable and cannot be extended later', async () => {
     const e = await withTx(ctx.db, (tx) => postEntry(tx, prepay(`pp-${uid()}`, 500n)));
     await expect(ctx.db.query('UPDATE journal_lines SET debit = 1 WHERE entry_id = $1', [e.id])).rejects.toThrow(/immutable/);
-    await expect(ctx.db.query('DELETE FROM journal_entries WHERE id = $1', [e.id])).rejects.toThrow(/immutable/);
+    await expect(ctx.db.query('DELETE FROM journal_entries WHERE id = $1', [e.id])).rejects.toThrow(/immutable|permission denied/); // runtime role has no DELETE (0016); the trigger also blocks it
     await expect(ctx.db.query('TRUNCATE journal_lines')).rejects.toThrow();
     await expect(withTx(ctx.db, (tx) => tx.query(`INSERT INTO journal_lines (entry_id, line_no, account_code, currency, debit) VALUES ($1,9,'1000','USD',1)`, [e.id]))).rejects.toThrow(/already posted/);
   });

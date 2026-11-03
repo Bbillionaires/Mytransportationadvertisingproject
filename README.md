@@ -14,7 +14,8 @@ apps/android/            Android kiosk shell around the web player (Kotlin, Keys
 apps/api/                Fastify API: identity, RBAC/tenancy, fleets, devices, ledger, revenue rules, allocations
   migrations/            Forward-only SQL; ledger invariants enforced by the database
   test/                  Integration tests against real PostgreSQL
-docs/                    EVENTS (playback validation policy), PRD, architecture/ADRs, ERD, ledger spec, API, permissions, threat model, backlog, deployment
+infra/media-worker/      Hardened container for ffmpeg processing + verify.sh
+docs/                    LOAD_TEST, EVENTS (playback validation policy), PRD, architecture/ADRs, ERD, ledger spec, API, permissions, threat model, backlog, deployment
 ```
 
 ## Quick start
@@ -33,7 +34,7 @@ npm run dev   # business portal: http://127.0.0.1:8080/portal/ (fleet1@, driver1
 ## Tests
 ```bash
 npm run typecheck
-npm test            # 28 finance-core tests (incl. property tests) + 167 API tests (media tests need ffmpeg)
+npm test            # 28 finance-core tests (incl. property tests) + 175 API tests (media tests need ffmpeg)
 npm run e2e         # browser end-to-end: tablet player ride (web + simulated Android key), rider phone app, fleet, driver, advertiser, creator and staff portals
 (cd apps/android && ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug)   # needs ANDROID_HOME
 ```

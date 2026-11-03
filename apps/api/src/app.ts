@@ -4,9 +4,9 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Config } from './config.js';
-import type { Db } from './db/pool.js';
+import { runWithDbScope, type Db } from './db/pool.js';
 import { HttpError } from './lib/errors.js';
-import { resolveSession } from './auth/context.js';
+import { dbScopeFor, resolveSession } from './auth/context.js';
 import { identityRoutes } from './modules/identity/routes.js';
 import { orgRoutes } from './modules/orgs/routes.js';
 import { fleetRoutes } from './modules/fleets/routes.js';
@@ -63,7 +63,24 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
   });
 
   // Disabled only for the automated test suite, which issues many logins from one address.
-  await app.register(rateLimit, { global: true, max: 300, timeWindow: '1 minute', ...(config.NODE_ENV === 'test' ? { allowList: () => true } : {}) });
+  // Signed tablet traffic is limited per device, not per IP: many tablets can share one carrier (CGNAT) address.
+  // A forged X-Device-Id only moves a request into another bucket; it is still rejected at the signature check.
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  await app.register(rateLimit, {
+    global: true, max: 300, timeWindow: '1 minute',
+    keyGenerator: (req) => { const d = req.headers['x-device-id']; return typeof d === 'string' && UUID_RE.test(d) && req.url.startsWith('/v1/devices/') ? `device:${d.toLowerCase()}` : req.ip; },
+    ...(config.NODE_ENV === 'test' && process.env.RATE_LIMIT_IN_TESTS !== 'true' ? { allowList: () => true } : {}),
+  });
+
+  // Database tenant scope (row-level security, migration 0016): every route handler runs with the signed-in user's
+  // organizations; platform staff get 'platform'; unauthenticated callers (tablets, riders, integration keys, sign-up)
+  // run in the system scope and are constrained by their own authentication and the app's checks.
+  app.addHook('onRoute', (route) => {
+    const handler = route.handler;
+    route.handler = function scoped(this: unknown, req, reply) {
+      return runWithDbScope(dbScopeFor(req.auth), () => (handler as any).call(this, req, reply));
+    } as typeof handler;
+  });
 
   app.addHook('onRequest', async (req, reply) => {
     reply.header('x-request-id', req.id);

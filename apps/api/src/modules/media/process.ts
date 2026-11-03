@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12,7 +13,25 @@ import { isVideo, type Detected } from './sniff.js';
 import { assetKey, LocalMediaStore, uploadPartKey } from './storage.js';
 
 const run = promisify(execFile);
-const ff = (args: string[]) => run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args], { maxBuffer: 16 * 1024 * 1024, timeout: 15 * 60_000 });
+
+/**
+ * Untrusted media is parsed by ffmpeg (R-023). Every ffmpeg/ffprobe run:
+ *  - may open local files only (`-protocol_whitelist file`), so a crafted file cannot make it fetch URLs
+ *    (internal network / cloud metadata) through playlist or concat tricks;
+ *  - runs under kernel resource limits via prlimit when available: address space, CPU seconds, output file size,
+ *    open files, no core dumps — a decoder bug cannot exhaust the host;
+ *  - has a wall-clock timeout and never reads stdin.
+ * Production additionally runs the worker in an isolated container (infra/media-worker, docs/DEPLOYMENT.md).
+ */
+export const SANDBOX_LIMITS = { addressSpaceBytes: 3 * 1024 ** 3, cpuSeconds: 900, fileSizeBytes: 4 * 1024 ** 3, openFiles: 256 };
+const PRLIMIT = ['/usr/bin/prlimit', '/bin/prlimit'].find((p) => existsSync(p)) ?? null;
+export function sandboxed(cmd: 'ffmpeg' | 'ffprobe', args: string[]): [string, string[]] {
+  const safe = [...(cmd === 'ffmpeg' ? ['-nostdin'] : []), '-protocol_whitelist', 'file', ...args];
+  if (!PRLIMIT) return [cmd, safe];
+  const l = SANDBOX_LIMITS;
+  return [PRLIMIT, [`--as=${l.addressSpaceBytes}`, `--cpu=${l.cpuSeconds}`, `--fsize=${l.fileSizeBytes}`, `--nofile=${l.openFiles}`, '--core=0', '--', cmd, ...safe]];
+}
+const ff = (args: string[]) => { const [c, a] = sandboxed('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', ...args]); return run(c, a, { maxBuffer: 16 * 1024 * 1024, timeout: 15 * 60_000 }); };
 
 export const LIMITS = {
   CREATOR_VIDEO: { maxDurationMs: 30 * 60_000, minDurationMs: 5_000 },
@@ -20,7 +39,8 @@ export const LIMITS = {
 } as const;
 
 async function probe(file: string) {
-  const { stdout } = await run('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', file], { timeout: 120_000 });
+  const [c, a] = sandboxed('ffprobe', ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', file]);
+  const { stdout } = await run(c, a, { timeout: 120_000 });
   return JSON.parse(stdout) as { format?: { duration?: string; format_name?: string }; streams?: Array<{ codec_type: string; codec_name: string; width?: number; height?: number; duration?: string }> };
 }
 

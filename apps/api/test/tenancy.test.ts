@@ -68,6 +68,6 @@ describe('RBAC and tenant isolation', () => {
     const chain = await ctx.db.query('SELECT id, prev_hash, hash FROM audit_log ORDER BY id');
     for (let i = 1; i < chain.rows.length; i++) expect(chain.rows[i].prev_hash).toBe(chain.rows[i - 1].hash);
     await expect(ctx.db.query('UPDATE audit_log SET action = $1 WHERE id = $2', ['tampered', chain.rows[0].id])).rejects.toThrow(/immutable/);
-    await expect(ctx.db.query('DELETE FROM audit_log')).rejects.toThrow(/immutable/);
+    await expect(ctx.db.query('DELETE FROM audit_log')).rejects.toThrow(/immutable|permission denied/); // runtime role has no DELETE (0016); the trigger also blocks it
   });
 });

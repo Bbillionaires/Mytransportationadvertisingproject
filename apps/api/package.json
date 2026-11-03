@@ -15,7 +15,8 @@
     "jobs:allocate-windows": "tsx src/jobs/allocate-windows.ts",
     "jobs:process-webhooks": "tsx src/jobs/process-webhooks.ts",
     "jobs:allocate-commissions": "tsx src/jobs/allocate-commissions.ts",
-    "jobs:send-email": "tsx src/jobs/send-email.ts"
+    "jobs:send-email": "tsx src/jobs/send-email.ts",
+    "load:tablets": "tsx load/tablet-load.ts"
   },
   "dependencies": {
     "@fastify/rate-limit": "^10.3.0",

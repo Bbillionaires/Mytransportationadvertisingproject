@@ -354,7 +354,25 @@ Bug found by e2e and fixed: uncredited sales (`touchType` NONE) showed a raw cod
 
 Test totals: finance-core 28, API 167, Android unit tests, browser e2e: tablet ride, rider app, fleet, driver, advertiser, creator and staff portals.
 
+## 2026-11-03 — Session 21: hardening (database isolation, media worker, load test)
+
+| Item | Status | Evidence |
+|---|---|---|
+| Restricted runtime role `rmn_app` (SET ROLE on every connection): not a superuser, owns nothing, no DELETE on ledger/audit (R-002) | ✅ | `rls.test.ts` (current_user, cannot disable triggers) |
+| PostgreSQL row-level security on tenant tables, per-request scope from the session; fail-closed (R-003, D-055) | ✅ | `rls.test.ts`: a route that forgets its filter/permission still cannot read or write another tenant; full API suite + all 7 browser suites pass with RLS on |
+| ffmpeg/ffprobe: local files only, prlimit resource limits, no stdin (R-023) | ✅ | `mediasandbox.test.ts` (control shows unsandboxed ffprobe fetches a URL; sandboxed never does) |
+| Hardened media-worker container (internal network, read-only FS, non-root, no capabilities, no-new-privileges, limits) | ✅ | `infra/media-worker/verify.sh`: real upload processed inside the container + 7 isolation checks; CI job added |
+| Rate limits per device for signed tablet traffic (carrier NAT) (R-031) | ✅ | `ratelimit.test.ts` |
+| Load test harness; 1,000 tablets at ~155 req/s, no errors (R-015) | ✅ | `docs/LOAD_TEST.md`; CI smoke job (300 tablets) |
+| Playlist budget-decision cache: p95 490 → 50 ms at 1,000 tablets; billing stays exact (R-024, D-056) | ✅ | load test before/after; budget tests (cache off in tests) |
+
+Not done in this session: object storage + CDN for media (R-021) — needs a provider choice and credentials; external penetration test (R-015).
+
+Test totals: finance-core 28, API 175, Android unit tests, browser e2e: tablet ride, rider app, fleet, driver, advertiser, creator and staff portals; media worker isolation check; load test.
+
 ### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
-1. Android field test on one tablet with the chosen EMM (D-017); key attestation at enrollment (R-028).
-2. Hardening before a pilot: Postgres row-level security (R-003), object storage + CDN for media (R-021), isolated media worker (R-023), load and penetration tests (R-015).
-3. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).
+1. Object storage + CDN for media (R-021): **DECISION REQUIRED** — provider (e.g. S3 + CloudFront, GCS + Cloud CDN, Cloudflare R2). Then an adapter for uploads/renditions and CDN-verified signed URLs.
+2. Incremental per-campaign spend counters in the validator (R-024) before scaling past a few thousand tablets.
+3. Android field test on one tablet with the chosen EMM (D-017); key attestation at enrollment (R-028).
+4. External penetration test (R-015) before the pilot.
+5. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).

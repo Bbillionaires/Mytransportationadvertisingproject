@@ -101,3 +101,10 @@ export async function authorize(db: Db, req: FastifyRequest, permission: string,
   return auth;
 }
 
+
+/** Row-level-security scope for a request (see migration 0016 and db/pool.ts). */
+export function dbScopeFor(auth: AuthContext | undefined): string {
+  if (!auth) return '';
+  if (auth.memberships.some((m) => m.orgKind === 'PLATFORM')) return 'platform';
+  return `tenant:${[...new Set(auth.memberships.map((m) => m.orgId))].join(',')}`;
+}

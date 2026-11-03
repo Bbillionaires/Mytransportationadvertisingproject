@@ -55,3 +55,30 @@ jobs:
       - run: ./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
       - uses: actions/upload-artifact@v4
         with: { name: tablet-shell-debug-apk, path: apps/android/app/build/outputs/apk/debug/*.apk, if-no-files-found: error }
+  media-worker-isolation:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg postgresql-client
+      - run: npm ci
+      - run: docker build -f infra/media-worker/Dockerfile -t rmn-media-worker .
+      - run: bash infra/media-worker/verify.sh   # real upload processed in the hardened container + isolation checks
+  load-test:
+    runs-on: ubuntu-latest
+    needs: test
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: rmn, POSTGRES_PASSWORD: rmn, POSTGRES_DB: rmn_test }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U rmn" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: TABLETS=300 DURATION_S=45 npm run load:tablets -w @rmn/api   # fails on any error response; prints latency percentiles
