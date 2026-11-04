@@ -27,6 +27,12 @@ const DB_URL = process.env.E2E_DATABASE_URL ?? 'postgres://rmn:rmn@localhost:543
 const SHOTS = process.env.E2E_SCREENSHOTS ?? tmpdir();
 const HERE = { latitude: 39.7817, longitude: -89.6501 };
 const step = (s: string) => console.log(`  • ${s}`);
+/** Poll an async condition from the test side (page.waitForFunction does not await async predicates). */
+async function until(cond: () => Promise<boolean>, what: string, timeoutMs = 30_000) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) { if (await cond()) return; await new Promise((r) => setTimeout(r, 300)); }
+  throw new Error(`timed out waiting: ${what}`);
+}
 
 async function resetDb() {
   const admin = new pg.Client({ connectionString: ADMIN_URL });
@@ -218,6 +224,12 @@ async function main() {
     await page.screenshot({ path: path.join(SHOTS, 'player-proximity.png') });
     await page.click('#toast button:has-text("Dismiss")');
 
+    step('the tablet keeps a local copy of its media and keeps playing with no connection (R-029)');
+    await until(async () => (await page.evaluate(async () => (await (await caches.open('rmn-media-v1')).keys()).length)) >= 2, 'tablet cached its media');
+    await ctx.setOffline(true);
+    await page.waitForFunction(() => { const v = document.querySelector('video'); return !!v && v.src.startsWith('blob:') && !v.paused && v.currentTime > 0.5; }, undefined, { timeout: 30_000 });
+    await ctx.setOffline(false);
+
     step('fleet suspends the tablet, then resumes; purge clears the rider');
     await api('POST', `/v1/orgs/${fleetOrg}/devices/${deviceId}/commands`, { command: 'SUSPEND' }, fleetAdmin.h);
     await page.waitForSelector('#idle:has-text("paused by the fleet operator")', { timeout: 10_000 });
@@ -241,6 +253,15 @@ async function main() {
       || (e.reasons.length === 1 && e.reasons[0] === 'DEVICE_NOT_ACTIVE');
     const bad = ev.filter((e) => e.status !== 'VALID' && !expectedInvalid(e));
     assert.deepEqual(bad, [], 'no unexpected invalid events');
+    step('when a campaign ends, the tablet deletes its cached copy of the ad (expiry enforcement)');
+    const adKey = `assets/${adAsset}/720p.mp4`;
+    const cachedKeys = () => page.evaluate(async () => (await (await caches.open('rmn-media-v1')).keys()).map((r) => decodeURIComponent(new URL(r.url).pathname.replace('/__media-cache/', ''))));
+    assert.ok((await cachedKeys()).includes(adKey), 'ad cached while the campaign runs');
+    await q(`UPDATE campaigns SET status = 'ENDED', ends_at = now() WHERE id = $1`, [campaign]);
+    await api('POST', `/v1/orgs/${fleetOrg}/devices/${deviceId}/commands`, { command: 'REFRESH_PLAYBACK' }, fleetAdmin.h);
+    await until(async () => !(await cachedKeys()).includes(adKey), 'ended campaign media pruned');
+    assert.ok(!(await cachedKeys()).includes(adKey), 'ended campaign media removed from the tablet');
+
     assert.deepEqual(problems, [], 'no page errors or CSP violations');
 
     step('Android shell: a tablet whose key lives in the native bridge (simulated Keystore ECDSA P-256) enrolls and plays');

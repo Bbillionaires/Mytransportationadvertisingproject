@@ -21,6 +21,26 @@ const schema = z.object({
   /** Local media storage root (dev/test). Production uses an object-store adapter with the same interface. */
   MEDIA_ROOT: z.string().default('./var/media'),
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(2 * 1024 * 1024 * 1024),
+  /**
+   * Media object storage (R-021). 'local' = MEDIA_ROOT on disk (development/tests); 's3' = an S3-compatible bucket
+   * (production: a Railway bucket — map ENDPOINT/REGION/BUCKET/ACCESS_KEY_ID/SECRET_ACCESS_KEY from the bucket).
+   */
+  MEDIA_STORE: z.enum(['local', 's3']).default('local'),
+  MEDIA_S3_ENDPOINT: z.string().url().optional(),
+  MEDIA_S3_REGION: z.string().default('auto'),
+  MEDIA_S3_BUCKET: z.string().optional(),
+  MEDIA_S3_ACCESS_KEY_ID: z.string().optional(),
+  MEDIA_S3_SECRET_ACCESS_KEY: z.string().optional(),
+  MEDIA_S3_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('false'),
+  /** Up to two backup buckets for original uploads (e.g. AWS S3 with Object Lock). Endpoint empty = AWS. */
+  BACKUP1_S3_ENDPOINT: z.string().url().optional(), BACKUP1_S3_REGION: z.string().optional(), BACKUP1_S3_BUCKET: z.string().optional(),
+  BACKUP1_S3_ACCESS_KEY_ID: z.string().optional(), BACKUP1_S3_SECRET_ACCESS_KEY: z.string().optional(), BACKUP1_S3_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('false'),
+  /** e.g. GLACIER_IR on AWS (instant reads, ~$0.004/GB-month). DEEP_ARCHIVE is not supported: restores would need a 12 h thaw. */
+  BACKUP1_S3_STORAGE_CLASS: z.enum(['STANDARD', 'STANDARD_IA', 'GLACIER_IR']).optional(),
+  BACKUP2_S3_ENDPOINT: z.string().url().optional(), BACKUP2_S3_REGION: z.string().optional(), BACKUP2_S3_BUCKET: z.string().optional(),
+  BACKUP2_S3_ACCESS_KEY_ID: z.string().optional(), BACKUP2_S3_SECRET_ACCESS_KEY: z.string().optional(), BACKUP2_S3_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('false'),
+  /** e.g. GLACIER_IR on AWS (instant reads, ~$0.004/GB-month). DEEP_ARCHIVE is not supported: restores would need a 12 h thaw. */
+  BACKUP2_S3_STORAGE_CLASS: z.enum(['STANDARD', 'STANDARD_IA', 'GLACIER_IR']).optional(),
   /** Opt-in only: let the AI pre-screen auto-approve. Disabled by default; a human decides every case (D-034). */
   MODERATION_AUTO_APPROVE: z.enum(['false']).default('false'),
   /** 'fake' = in-process Stripe stand-in (dev/demo/tests); 'stripe' = Stripe API with a TEST key. */
@@ -52,6 +72,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   if (parsed.data.PAYMENTS_PROVIDER === 'stripe' && !parsed.data.STRIPE_SECRET_KEY) throw new Error('PAYMENTS_PROVIDER=stripe requires STRIPE_SECRET_KEY (test mode)');
   if (parsed.data.NODE_ENV === 'production' && parsed.data.PAYMENTS_PROVIDER === 'fake') throw new Error('the fake payment provider cannot run in production');
+  if (parsed.data.MEDIA_STORE === 's3' && !(parsed.data.MEDIA_S3_BUCKET && parsed.data.MEDIA_S3_ACCESS_KEY_ID && parsed.data.MEDIA_S3_SECRET_ACCESS_KEY)) throw new Error('MEDIA_STORE=s3 requires MEDIA_S3_BUCKET, MEDIA_S3_ACCESS_KEY_ID and MEDIA_S3_SECRET_ACCESS_KEY');
   parsed.data.PLAYLIST_BUDGET_CACHE_MS ??= parsed.data.NODE_ENV === 'test' ? 0 : 5000;
   if (parsed.data.NODE_ENV === 'production' && parsed.data.DEV_IN_PROCESS_JOBS === 'true') throw new Error('DEV_IN_PROCESS_JOBS cannot be used in production');
   return parsed.data;

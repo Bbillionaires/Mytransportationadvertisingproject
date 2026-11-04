@@ -384,8 +384,24 @@ Bug found by the counter test and fixed: a late play held inside an already-bill
 
 Test totals: finance-core 28, API 177, Android unit tests, browser e2e: tablet ride, rider app, fleet, driver, advertiser, creator and staff portals; media worker isolation check; load test.
 
+## 2026-11-04 — Session 23: media object storage, locked backups, tablet media cache (R-021, R-029)
+
+| Item | Status | Evidence |
+|---|---|---|
+| Object storage layer: local disk (dev/tests) or any S3-compatible bucket (Railway main store); signed direct links for tablets, portal and reviewers | ✅ | `mediabackup.test.ts` against a real S3 API (moto): thumbnail fetched straight from the bucket |
+| Verified uploads stored as immutable `originals/<id>`; processing works from a scratch copy and writes renditions to the bucket | ✅ | same test; existing media tests pass on the new flow |
+| Add-only backups to up to two buckets (AWS Glacier IR with Object Lock; optional second Railway bucket) | ✅ | idempotent copies, overwrite refused, locked version not deletable, Glacier IR storage class |
+| Nightly audit (size + SHA-256, deep re-hash of the main bucket), auto re-copy of missing backups, restore with re-rendering | ✅ | lost original + renditions restored; in-place corruption detected and restored; lost backup re-copied |
+| Storage setup check (CORS for tablets, versioning + Object Lock required on at least one backup) | ✅ | run against moto: locked+unlocked → PASS/WARN; unlocked only → FAIL |
+| Tablet media cache: play from local copies, background downloads (ads first), 1.5 GB cap, prune what the server stops listing | ✅ | player e2e: plays with the network cut; ended campaign's ad deleted from the tablet |
+| Setup guide with click-by-click AWS and Railway steps and a least-privilege backup IAM policy | ✅ | `docs/MEDIA_STORAGE.md` |
+
+Bugs found and fixed: a background download from an older playlist could re-add media after a newer playlist removed it (syncs now serialized; superseded downloads never write). A test bug was found too: Playwright's `waitForFunction` did not await async checks, so two e2e waits passed instantly (now polled from the test).
+
+Not verified here: real Railway and AWS buckets (needs the product owner's accounts), and the IAM deny rules (moto does not enforce IAM). Run `jobs:check-media-storage` after setup.
+
 ### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
-1. Object storage + CDN for media (R-021): **DECISION REQUIRED** — provider (e.g. S3 + CloudFront, GCS + Cloud CDN, Cloudflare R2).
+1. **Product owner:** create the AWS backup bucket and backup user, and the Railway bucket (docs/MEDIA_STORAGE.md), then run `jobs:check-media-storage`.
 2. Android field test on one tablet with the chosen EMM (D-017); key attestation at enrollment (R-028).
 3. External penetration test (R-015) before the pilot.
 4. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).

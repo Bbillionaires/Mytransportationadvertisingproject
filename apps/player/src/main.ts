@@ -2,6 +2,7 @@ import { ApiError, Device } from './device';
 import { flush, record } from './events';
 import { Exposure } from './exposure';
 import { qrSvg } from './qr';
+import { playableUrl, prefetch, prune } from './mediacache';
 import { kvGet, kvSet } from './store';
 import { $, button, closeOverlay, el, hideToast, onOverlayClose, openOverlay, overlayOpen, sleep, toast } from './ui';
 
@@ -11,7 +12,7 @@ const T = FAST
   ? { heartbeat: 2_000, flush: 2_000, playlistRetry: 2_000, active: 15_000, proximity: 3_000, banner: 4_000, display: 3_000, pairPoll: 1_000 }
   : { heartbeat: 60_000, flush: 20_000, playlistRetry: 30_000, active: 300_000, proximity: 60_000, banner: 15_000, display: 8_000, pairPoll: 2_000 };
 
-interface Media { url: string; expiresAt: string }
+interface Media { url: string; cacheKey?: string; expiresAt: string }
 interface Ad { campaignId: string; creativeId: string; kind: 'VIDEO' | 'BANNER' | 'DISPLAY'; durationMs: number | null; headline: string | null; bodyText: string | null;
   destinationUrl: string | null; clickIdParam: string; coupon: { description: string } | null; priority: number; frequencyCapPerHour: number | null; skipDelaySeconds: number; expiresAt: string; media: Media | null }
 interface Content { videoId: string; creatorId: string; channelName: string; title: string; durationMs: number; media: Media }
@@ -60,10 +61,31 @@ async function refreshPlaylist() {
   try {
     state.playlist = await state.device!.call<Playlist>('GET', '/v1/devices/playlist');
     await kvSet('lastPlaylist', state.playlist);
+    void syncMediaCache(state.playlist);
   } catch (e) {
     if (!state.playlist) state.playlist = (await kvGet<Playlist>('lastPlaylist')) ?? null; // offline: keep last known (expired items are skipped)
   }
 }
+/**
+ * Keep the tablet's media cache in step with a fresh playlist: drop what the server no longer lists, then download
+ * what is missing (ads first), one at a time in the background. See mediacache.ts (R-029).
+ */
+let cacheSync: AbortController | null = null;
+let cacheChain: Promise<unknown> = Promise.resolve();
+function syncMediaCache(p: Playlist) {
+  // Syncs run one at a time; a newer playlist cancels the older download first, so a download that started under
+  // an old playlist can never re-add media after the newer playlist removed it.
+  cacheSync?.abort();
+  const ctl = (cacheSync = new AbortController());
+  cacheChain = cacheChain.then(async () => {
+    if (ctl.signal.aborted) return;
+    const media = [...p.ads.map((a) => a.media), ...p.content.map((c) => c.media)].filter((m): m is Media => !!m);
+    await prune(new Set(media.map((m) => m.cacheKey).filter((k): k is string => !!k))).catch(() => 0);
+    if (p.playbackAllowed) await prefetch(media, ctl.signal).catch(() => 0);
+  });
+  return cacheChain;
+}
+
 async function playlistLoop() {
   for (;;) {
     await refreshPlaylist();
@@ -124,7 +146,7 @@ async function playContent(c: Content, signal: AbortSignal) {
   state.playbackState = 'PLAYING';
   const bannerStop = new AbortController();
   void bannerLoop(bannerStop.signal);
-  const { completed } = await playMedia(c.media.url, local.signal, ex);
+  const { completed } = await playMedia(await playableUrl(c.media), local.signal, ex);
   bannerStop.abort();
   next.hidden = true;
   await record({ type: 'CONTENT_PLAYBACK', videoId: c.videoId, completed, ...ex.finish() });
@@ -150,7 +172,7 @@ async function playVideoAd(ad: Ad, signal: AbortSignal) {
   $('#now').textContent = 'Advertisement';
   const skip = adControls(ad, pauseFor);
   skip.onclick = () => { state.interactions++; skipped = true; local.abort(); };
-  const { completed } = await playMedia(ad.media!.url, local.signal, ex, (t) => {
+  const { completed } = await playMedia(await playableUrl(ad.media!), local.signal, ex, (t) => {
     const left = Math.ceil(ad.skipDelaySeconds - t);
     if (left > 0) skip.textContent = `Skip in ${left}`; else { skip.textContent = 'Skip ad'; skip.removeAttribute('disabled'); }
   });
@@ -161,7 +183,7 @@ async function playVideoAd(ad: Ad, signal: AbortSignal) {
 
 async function showDisplayAd(ad: Ad, signal: AbortSignal) {
   const img = $<HTMLImageElement>('#display');
-  img.src = ad.media!.url; img.alt = ad.headline ?? 'Advertisement'; img.hidden = false; video().hidden = true;
+  img.src = await playableUrl(ad.media!); img.alt = ad.headline ?? 'Advertisement'; img.hidden = false; video().hidden = true;
   $('#now').textContent = 'Advertisement';
   const ex = new Exposure(null);
   ex.set(true);

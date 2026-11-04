@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Config } from '../../config.js';
 import type { Db } from '../../db/pool.js';
-import { signMediaUrl } from '../../lib/media.js';
+import { mediaUrl } from '../../lib/objectStore.js';
 import { authenticateDevice } from '../devices/routes.js';
 import { isScheduleActive } from './schedule.js';
 import { advertiserAvailableMilli, campaignSpend, nextPlayBlock } from './budget.js';
@@ -60,7 +60,7 @@ export async function playlistRoutes(app: FastifyInstance, { db, config }: { db:
       `SELECT DISTINCT ON (campaign_id) campaign_id, coupon_description FROM commission_offers
         WHERE campaign_id = ANY($1::uuid[]) AND status = 'ACTIVE' AND coupon_enabled AND valid_from <= now() AND valid_to > now() ORDER BY campaign_id, created_at DESC`, [live.map((c) => c.id)]);
     const couponBy = new Map(offers.rows.map((o) => [o.campaign_id, o.coupon_description ?? 'Get a coupon']));
-    const ads = creatives.rows.map((cr) => {
+    const ads = (await Promise.all(creatives.rows.map(async (cr) => {
       const c = live.find((x) => x.id === cr.campaign_id)!;
       const expiresAt = new Date(Math.min(validUntil.getTime(), new Date(c.ends_at).getTime()));
       return {
@@ -68,18 +68,19 @@ export async function playlistRoutes(app: FastifyInstance, { db, config }: { db:
         destinationUrl: cr.destination_url ?? c.destination_url, clickIdParam: 'rmn_click', coupon: couponBy.has(c.id) ? { description: couponBy.get(c.id) } : null, priority: c.priority, frequencyCapPerHour: c.frequency_cap_per_hour, skipDelaySeconds: c.skip_delay_seconds,
         schedule: { timezone: c.timezone, daysOfWeek: c.days_of_week, startMinute: c.start_minute, endMinute: c.end_minute },
         expiresAt: expiresAt.toISOString(),
-        media: cr.media_key ? { url: signMediaUrl(config.MEDIA_BASE_URL, cr.media_key, expiresAt, config.MEDIA_SIGNING_KEY), expiresAt: expiresAt.toISOString() } : null,
+        // cacheKey identifies the media itself (stable across signed links) so tablets can keep a local copy (R-029).
+        media: cr.media_key ? { url: await mediaUrl(config, cr.media_key, expiresAt), cacheKey: cr.media_key, expiresAt: expiresAt.toISOString() } : null,
       };
-    }).sort((x, y) => y.priority - x.priority);
+    }))).sort((x, y) => y.priority - x.priority);
 
     const videos = await db.query(
       `SELECT v.id, v.creator_id, v.title, v.duration_ms, v.media_key, cp.display_name FROM videos v JOIN creator_profiles cp ON cp.id = v.creator_id
         WHERE v.status = 'APPROVED' AND v.media_key IS NOT NULL AND cp.monetization_status NOT IN ('SUSPENDED','TERMINATED')
         ORDER BY v.created_at DESC LIMIT 200`);
-    const content = videos.rows.map((v) => ({
+    const content = await Promise.all(videos.rows.map(async (v) => ({
       videoId: v.id, creatorId: v.creator_id, channelName: v.display_name, title: v.title, durationMs: v.duration_ms,
-      media: { url: signMediaUrl(config.MEDIA_BASE_URL, v.media_key, validUntil, config.MEDIA_SIGNING_KEY), expiresAt: validUntil.toISOString() },
-    }));
+      media: { url: await mediaUrl(config, v.media_key, validUntil), cacheKey: v.media_key, expiresAt: validUntil.toISOString() },
+    })));
     return { ...base, deviceStatus: dev.status, playbackAllowed: true, market, ads, content };
   });
 }

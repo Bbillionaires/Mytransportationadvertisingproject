@@ -8,7 +8,8 @@ import { audit } from '../../lib/audit.js';
 import { hashPassword } from '../../lib/crypto.js';
 import { issueUserToken, notifyExistingAccount, passwordSchema, REGISTRATION_ACCEPTED } from '../identity/accounts.js';
 import { badRequest, conflict, forbidden, notFound, unprocessable } from '../../lib/errors.js';
-import { signMediaUrl, verifyMediaSignature } from '../../lib/media.js';
+import { verifyMediaSignature } from '../../lib/media.js';
+import { LocalObjectStore, mediaStores, mediaUrl } from '../../lib/objectStore.js';
 import { parse, uuid } from '../../lib/validation.js';
 import { actorOf, authorize } from '../../auth/context.js';
 import { loadOrg } from '../orgs/routes.js';
@@ -46,7 +47,7 @@ async function videoInOrg(q: Queryable, orgId: string, videoId: string) {
 export async function mediaRoutes(app: FastifyInstance, { db, config }: { db: Db; config: Config }) {
   const store = new LocalMediaStore(config.MEDIA_ROOT);
   app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: CHUNK_LIMIT }, (_req, body, done) => done(null, body));
-  const signed = (key: string, minutes: number) => signMediaUrl(config.MEDIA_BASE_URL, key, new Date(Date.now() + minutes * 60_000), config.MEDIA_SIGNING_KEY);
+  const signed = (key: string, minutes: number) => mediaUrl(config, key, new Date(Date.now() + minutes * 60_000));
 
   // ---------------- uploads (resumable, chunked) ----------------
   app.post('/v1/orgs/:orgId/uploads', async (req, reply) => {
@@ -109,7 +110,12 @@ export async function mediaRoutes(app: FastifyInstance, { db, config }: { db: Db
       const type = sniff(head);
       if (!type) return fail('unsupported file type (allowed: MP4, MOV, WebM video; PNG, JPEG images for display ads)');
       if (u.purpose === 'CREATOR_VIDEO' && !isVideo(type)) return fail('creator uploads must be video');
-      await tx.query(`UPDATE media_uploads SET status = 'UPLOADED', detected_type = $2, completed_at = now() WHERE id = $1`, [u.id, type]);
+      // The verified original goes to object storage (written once, never modified or deleted by the app); the local
+      // staging copy is then removed. Backups copy it from there (jobs:backup-media).
+      const originalKey = `originals/${u.id}`;
+      await mediaStores(config).primary.putFile(originalKey, store.pathFor(uploadPartKey(u.id)), { contentType: u.declared_type, sha256: u.sha256 });
+      await tx.query(`UPDATE media_uploads SET status = 'UPLOADED', detected_type = $2, completed_at = now(), original_key = $3 WHERE id = $1`, [u.id, type, originalKey]);
+      await store.remove(uploadPartKey(u.id));
       await audit(tx, actorOf(req), 'media.uploaded', { type: 'media_upload', id: u.id, orgId: u.org_id }, { detectedType: type, sizeBytes: u.size_bytes });
       return { uploadId: u.id, status: 'UPLOADED', detectedType: type };
     });
@@ -121,7 +127,7 @@ export async function mediaRoutes(app: FastifyInstance, { db, config }: { db: Db
     const asset = a.rows[0];
     return {
       uploadId: u.id, status: u.status, receivedBytes: String(u.received_bytes), sizeBytes: String(u.size_bytes), detectedType: u.detected_type, error: u.error,
-      asset: asset && { id: asset.id, kind: asset.kind, durationMs: asset.duration_ms, width: asset.width, height: asset.height, hasAudio: asset.has_audio, thumbnailUrl: signed(asset.thumbnail_key, 30) },
+      asset: asset && { id: asset.id, kind: asset.kind, durationMs: asset.duration_ms, width: asset.width, height: asset.height, hasAudio: asset.has_audio, thumbnailUrl: await signed(asset.thumbnail_key, 30) },
     };
   });
 
@@ -130,16 +136,18 @@ export async function mediaRoutes(app: FastifyInstance, { db, config }: { db: Db
     const key = decodeURIComponent((req.params as any)['*'] as string);
     const q = req.query as { exp?: string; sig?: string };
     if (!RENDITION_KEY_RE.test(key) || !q.sig || !verifyMediaSignature(key, Number(q.exp), q.sig, config.MEDIA_SIGNING_KEY)) return reply.code(403).send({ error: { code: 'FORBIDDEN', message: 'invalid or expired media link' } });
-    const size = await store.size(key);
+    const objects = mediaStores(config).primary;
+    if (!(objects instanceof LocalObjectStore)) return reply.code(404).send(); // object storage serves its own signed links
+    const size = (await objects.head(key))?.size ?? null;
     if (size === null) return reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'not found' } });
     reply.header('content-type', key.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg').header('accept-ranges', 'bytes').header('cache-control', 'private, max-age=300');
     const range = /^bytes=(\d+)-(\d*)$/.exec(String(req.headers.range ?? ''));
     if (range) {
       const start = Number(range[1]); const end = range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
       if (start > end) return reply.code(416).header('content-range', `bytes */${size}`).send();
-      return reply.code(206).header('content-range', `bytes ${start}-${end}/${size}`).header('content-length', end - start + 1).send(store.read(key, { start, end }));
+      return reply.code(206).header('content-range', `bytes ${start}-${end}/${size}`).header('content-length', end - start + 1).send(objects.read(key, { start, end }));
     }
-    return reply.header('content-length', size).send(store.read(key));
+    return reply.header('content-length', size).send(objects.read(key));
   });
 
   // ---------------- creators ----------------
@@ -178,7 +186,7 @@ export async function mediaRoutes(app: FastifyInstance, { db, config }: { db: Db
               (SELECT json_agg(json_build_object('id', t.id, 'status', t.status, 'receivedAt', t.received_at, 'work', t.copyrighted_work, 'restoreEligibleAt', t.restore_eligible_at))
                  FROM takedown_notices t WHERE t.video_id = v.id) AS takedowns
          FROM videos v JOIN creator_profiles cp ON cp.id = v.creator_id LEFT JOIN media_assets a ON a.id = v.asset_id WHERE cp.org_id = $1 ORDER BY v.created_at DESC`, [orgId]);
-    return { items: r.rows.map(({ thumbnail_key, ...v }) => ({ ...v, thumbnailUrl: thumbnail_key ? signed(thumbnail_key, 30) : null })) };
+    return { items: await Promise.all(r.rows.map(async ({ thumbnail_key, ...v }) => ({ ...v, thumbnailUrl: thumbnail_key ? await signed(thumbnail_key, 30) : null }))) };
   });
 
   /** Submit a video for an uploaded file. Rights attestation is mandatory and stored immutably. */
@@ -267,7 +275,7 @@ export async function mediaRoutes(app: FastifyInstance, { db, config }: { db: Db
          LEFT JOIN videos v ON mc.subject_type = 'VIDEO' AND v.id = mc.subject_id
          LEFT JOIN creator_profiles cp ON cp.id = v.creator_id
         WHERE mc.status = 'OPEN' AND mc.subject_type = 'VIDEO' ORDER BY (mc.priority = 'HIGH') DESC, mc.created_at LIMIT 200`);
-    return { items: r.rows.map((x) => ({ ...x, renditionUrl: signed(x.rendition_key, 30), thumbnailUrl: signed(x.thumbnail_key, 30), rendition_key: undefined, thumbnail_key: undefined })) };
+    return { items: await Promise.all(r.rows.map(async (x) => ({ ...x, renditionUrl: await signed(x.rendition_key, 30), thumbnailUrl: await signed(x.thumbnail_key, 30), rendition_key: undefined, thumbnail_key: undefined }))) };
   });
 
   app.post('/v1/moderation/cases/:id/decision', async (req) => {

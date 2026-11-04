@@ -17,9 +17,15 @@
     "jobs:allocate-commissions": "tsx src/jobs/allocate-commissions.ts",
     "jobs:send-email": "tsx src/jobs/send-email.ts",
     "load:tablets": "tsx load/tablet-load.ts",
-    "jobs:verify-spend-counters": "tsx src/jobs/verify-spend-counters.ts"
+    "jobs:verify-spend-counters": "tsx src/jobs/verify-spend-counters.ts",
+    "jobs:backup-media": "tsx src/jobs/backup-media.ts",
+    "jobs:verify-media": "tsx src/jobs/verify-media.ts",
+    "jobs:restore-media": "tsx src/jobs/restore-media.ts",
+    "jobs:check-media-storage": "tsx src/jobs/check-media-storage.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1161.0",
+    "@aws-sdk/s3-request-presigner": "^3.1161.0",
     "@fastify/rate-limit": "^10.3.0",
     "@rmn/finance-core": "0.1.0",
     "fastify": "^5.12.8",

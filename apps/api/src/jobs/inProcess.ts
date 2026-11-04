@@ -4,6 +4,7 @@ import type { Db } from '../db/pool.js';
 import { deliverPendingEmail, LogEmailSender } from '../lib/email.js';
 import { runValidation } from '../modules/events/validator.js';
 import { processPendingUploads } from '../modules/media/process.js';
+import { runBackups } from '../modules/media/backup.js';
 import { processPendingWebhooks } from '../modules/payments/webhooks.js';
 
 /**
@@ -22,10 +23,11 @@ export function startInProcessJobs(db: Db, config: Config, log: FastifyBaseLogge
   }, ms);
   const timers = [
     every('process-media', 3_000, () => processPendingUploads(db, config)),
+    every('backup-media', 60_000, () => runBackups(db, config)),
     every('process-webhooks', 5_000, () => processPendingWebhooks(db)),
     every('send-email', 5_000, () => deliverPendingEmail(db, email)),
     every('validate-events', 15_000, () => runValidation(db, 5000)),
   ];
-  log.info('development: background jobs running in-process (media, webhooks, email log, event validation)');
+  log.info('development: background jobs running in-process (media, backups, webhooks, email log, event validation)');
   return () => timers.forEach(clearInterval);
 }

@@ -4,7 +4,7 @@ import type { Db, Queryable } from '../../db/pool.js';
 import { withTx } from '../../db/pool.js';
 import { audit } from '../../lib/audit.js';
 import { hashPassword } from '../../lib/crypto.js';
-import { signMediaUrl } from '../../lib/media.js';
+import { mediaUrl } from '../../lib/objectStore.js';
 import { issueUserToken, notifyExistingAccount, passwordSchema, REGISTRATION_ACCEPTED } from '../identity/accounts.js';
 import { conflict, notFound, unprocessable } from '../../lib/errors.js';
 import { currency, minor, parse, uuid } from '../../lib/validation.js';
@@ -316,10 +316,10 @@ export async function campaignRoutes(app: FastifyInstance, { db, config }: { db:
     const pendingCreatives = await db.query(
       `SELECT cr.* FROM creatives cr JOIN campaigns c ON c.id = cr.campaign_id WHERE cr.status = 'PENDING_REVIEW' AND c.status IN ('APPROVED','PAUSED') ORDER BY cr.created_at`);
     // Reviewers must see exactly what riders will see: short-lived signed links to the processed rendition.
-    const preview = (k: any) => ({ ...creativeApi(k), previewUrl: k.media_key ? signMediaUrl(config.MEDIA_BASE_URL, k.media_key, new Date(Date.now() + 30 * 60_000), config.MEDIA_SIGNING_KEY) : null });
+    const preview = async (k: any) => ({ ...creativeApi(k), previewUrl: k.media_key ? await mediaUrl(config, k.media_key, new Date(Date.now() + 30 * 60_000)) : null });
     return {
-      campaigns: c.rows.map((x) => ({ ...toApi(x), advertiserName: x.advertiser_name, creatives: cr.rows.filter((k) => k.campaign_id === x.id).map((k) => ({ ...preview(k), aiPrescreen: k.ai })) })),
-      creativesOnLiveCampaigns: pendingCreatives.rows.map(preview),
+      campaigns: await Promise.all(c.rows.map(async (x) => ({ ...toApi(x), advertiserName: x.advertiser_name, creatives: await Promise.all(cr.rows.filter((k) => k.campaign_id === x.id).map(async (k) => ({ ...(await preview(k)), aiPrescreen: k.ai }))) }))),
+      creativesOnLiveCampaigns: await Promise.all(pendingCreatives.rows.map(preview)),
     };
   });
 

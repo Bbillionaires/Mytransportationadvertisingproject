@@ -31,6 +31,7 @@ import { StripeProvider } from './modules/payments/stripe.js';
 import { FakePaymentProvider } from './modules/payments/fake.js';
 import { devCheckoutRoutes } from './modules/payments/devCheckout.js';
 import { platformRoutes } from './modules/platform/routes.js';
+import { mediaOrigins } from './lib/objectStore.js';
 
 /** Postgres error codes raised by our integrity triggers/constraints, surfaced as client errors. */
 const PG_CLIENT_ERRORS: Record<string, [number, string]> = {
@@ -139,7 +140,7 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
   app.get('/', async (_req, reply) => reply.redirect('/portal/'));
 
   // Static web apps built by esbuild: fixed file lists, no directory serving, strict CSP on the HTML.
-  const mediaOrigin = new URL(config.MEDIA_BASE_URL).origin;
+  const mediaOrigin = mediaOrigins(config).join(' ');
   const TYPES: Record<string, string> = { html: 'text/html; charset=utf-8', js: 'text/javascript; charset=utf-8', map: 'application/json', css: 'text/css; charset=utf-8',
     webmanifest: 'application/manifest+json', svg: 'image/svg+xml' };
   const webApp = (prefix: string, dir: string, files: string[], csp: string, permissions: string) => {
@@ -159,7 +160,7 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
   };
   // Passenger tablet web player (apps/player).
   webApp('player', '../../player/dist', ['index.html', 'player.js', 'player.js.map', 'player.css'],
-    `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: ${mediaOrigin}; media-src 'self' blob: ${mediaOrigin}; connect-src 'self'; frame-src https:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
+    `default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob: ${mediaOrigin}; media-src 'self' blob: ${mediaOrigin}; connect-src 'self' ${mediaOrigin}; frame-src https:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
     'geolocation=(self), camera=(), microphone=()');
   // Rider phone web app (apps/rider), installable PWA.
   webApp('rider', '../../rider/dist', ['index.html', 'rider.js', 'rider.js.map', 'rider.css', 'manifest.webmanifest', 'sw.js', 'icon.svg'],

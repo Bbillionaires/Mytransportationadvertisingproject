@@ -21,9 +21,15 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: npm }
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: S3-compatible test server (moto) for media storage/backup tests
+        run: |
+          python3 -m pip install --quiet "moto[server]"
+          nohup moto_server -H 127.0.0.1 -p 5055 > /tmp/moto.log 2>&1 &
+          for i in $(seq 1 30); do curl -s -o /dev/null http://127.0.0.1:5055/ && break; sleep 1; done
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+        env: { REQUIRE_S3_TESTS: "true" }
       - run: npm audit --omit=dev --audit-level=high
   player-e2e:
     runs-on: ubuntu-latest

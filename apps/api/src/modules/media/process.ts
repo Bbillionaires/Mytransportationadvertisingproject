@@ -10,7 +10,8 @@ import { withTx } from '../../db/pool.js';
 import { audit } from '../../lib/audit.js';
 import { MODERATION_POLICY_VERSION, screenText, summarize, unavailableVisualProvider, type ModerationProvider, type ProviderResult } from './moderation.js';
 import { isVideo, type Detected } from './sniff.js';
-import { assetKey, LocalMediaStore, uploadPartKey } from './storage.js';
+import { mediaStores, type ObjectStore } from '../../lib/objectStore.js';
+import { assetKey } from './storage.js';
 
 const run = promisify(execFile);
 
@@ -44,9 +45,29 @@ async function probe(file: string) {
   return JSON.parse(stdout) as { format?: { duration?: string; format_name?: string }; streams?: Array<{ codec_type: string; codec_name: string; width?: number; height?: number; duration?: string }> };
 }
 
+/**
+ * Transcode the playable rendition and thumbnail from a local copy of the original, then store them. Also used to
+ * re-create renditions from a restored original (jobs:restore-media) — renditions are not backed up.
+ */
+export async function renderAsset(objects: ObjectStore, src: string, outDir: string, assetId: string, video: boolean, durationMs: number | null, hasAudio: boolean) {
+  const rendition = video ? assetKey(assetId, '720p.mp4') : assetKey(assetId, 'display.jpg');
+  const thumb = assetKey(assetId, 'thumb.jpg');
+  const r = path.join(outDir, video ? 'rendition.mp4' : 'rendition.jpg'), t = path.join(outDir, 'thumb.jpg');
+  if (video) {
+    await ff(['-i', src, '-vf', 'scale=-2:min(720\\,ih)', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
+      ...(hasAudio ? ['-c:a', 'aac', '-b:a', '128k'] : ['-an']), '-movflags', '+faststart', r]);
+    await ff(['-ss', String(Math.min(1, (durationMs! / 1000) / 2)), '-i', src, '-frames:v', '1', '-vf', 'scale=-2:360', t]);
+  } else {
+    await ff(['-i', src, '-vf', 'scale=min(1920\\,iw):-2', '-q:v', '3', r]);
+    await ff(['-i', src, '-vf', 'scale=-2:360', t]);
+  }
+  await objects.putFile(rendition, r, { contentType: video ? 'video/mp4' : 'image/jpeg' });
+  await objects.putFile(thumb, t, { contentType: 'image/jpeg' });
+  return { rendition, thumb };
+}
+
 /** Probe, transcode, thumbnail, sample frames, extract audio, moderate. Throws a user-facing message on rejection. */
-async function processOne(store: LocalMediaStore, upload: any, assetId: string, providers: ModerationProvider[], texts: string[]) {
-  const src = store.pathFor(assetKey(assetId, 'original'));
+async function processOne(objects: ObjectStore, src: string, outDir: string, upload: any, assetId: string, providers: ModerationProvider[], texts: string[]) {
   const info = await probe(src);
   const v = info.streams?.find((s) => s.codec_type === 'video');
   const a = info.streams?.find((s) => s.codec_type === 'audio');
@@ -61,17 +82,7 @@ async function processOne(store: LocalMediaStore, upload: any, assetId: string, 
   }
   if (!video && upload.purpose === 'CREATOR_VIDEO') throw new Error('creator uploads must be video');
 
-  await store.ensureDir(`assets/${assetId}`);
-  const rendition = video ? assetKey(assetId, '720p.mp4') : assetKey(assetId, 'display.jpg');
-  const thumb = assetKey(assetId, 'thumb.jpg');
-  if (video) {
-    await ff(['-i', src, '-vf', 'scale=-2:min(720\\,ih)', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
-      ...(a ? ['-c:a', 'aac', '-b:a', '128k'] : ['-an']), '-movflags', '+faststart', store.pathFor(rendition)]);
-    await ff(['-ss', String(Math.min(1, (durationMs! / 1000) / 2)), '-i', src, '-frames:v', '1', '-vf', 'scale=-2:360', store.pathFor(thumb)]);
-  } else {
-    await ff(['-i', src, '-vf', 'scale=min(1920\\,iw):-2', '-q:v', '3', store.pathFor(rendition)]);
-    await ff(['-i', src, '-vf', 'scale=-2:360', store.pathFor(thumb)]);
-  }
+  const { rendition, thumb } = await renderAsset(objects, src, outDir, assetId, video, durationMs, !!a);
 
   // Moderation inputs: up to 30 frames evenly spaced, plus mono 16 kHz audio for speech recognition.
   const work = await mkdtemp(path.join(tmpdir(), 'rmn-mod-'));
@@ -106,7 +117,7 @@ async function processOne(store: LocalMediaStore, upload: any, assetId: string, 
  * the upload move to PENDING_REVIEW (or PROCESSING_FAILED); nothing is ever approved here.
  */
 export async function processPendingUploads(db: Db, config: Config, providers: ModerationProvider[] = [unavailableVisualProvider], limit = 5) {
-  const store = new LocalMediaStore(config.MEDIA_ROOT);
+  const objects = mediaStores(config).primary;
   const out = { processed: 0, ready: 0, failed: 0 };
   for (let i = 0; i < limit; i++) {
     const claimed = await withTx(db, async (tx) => {
@@ -120,9 +131,13 @@ export async function processPendingUploads(db: Db, config: Config, providers: M
     const assetId = crypto.randomUUID();
     const vids = await db.query('SELECT id, title, description FROM videos WHERE upload_id = $1', [claimed.id]);
     const texts = vids.rows.flatMap((v) => [v.title, v.description ?? '']).filter(Boolean);
+    // ffmpeg works on a local scratch copy of the original; the original in object storage is never modified.
+    const scratch = await mkdtemp(path.join(tmpdir(), 'rmn-proc-'));
     try {
-      await store.move(uploadPartKey(claimed.id), assetKey(assetId, 'original'));
-      const res = await processOne(store, claimed, assetId, providers, texts);
+      if (!claimed.original_key) throw new Error('original file is missing');
+      const src = path.join(scratch, 'original');
+      await objects.getToFile(claimed.original_key, src);
+      const res = await processOne(objects, src, scratch, claimed, assetId, providers, texts);
       await withTx(db, async (tx) => {
         await tx.query(
           `INSERT INTO media_assets (id, upload_id, org_id, kind, duration_ms, width, height, has_audio, rendition_key, thumbnail_key, probe) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
@@ -146,8 +161,9 @@ export async function processPendingUploads(db: Db, config: Config, providers: M
         await tx.query(`UPDATE videos SET status = 'PROCESSING_FAILED' WHERE upload_id = $1 AND status = 'PROCESSING'`, [claimed.id]);
         await audit(tx, {}, 'media.processing_failed', { type: 'media_upload', id: claimed.id, orgId: claimed.org_id }, { error: msg });
       });
-      await store.remove(assetKey(assetId, 'original')).catch(() => {});
       out.failed += 1;
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
     }
   }
   return out;
