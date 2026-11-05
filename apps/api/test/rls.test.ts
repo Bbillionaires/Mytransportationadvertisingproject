@@ -1,6 +1,6 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { runWithDbScope } from '../src/db/pool.js';
+import { createPool, runWithDbScope } from '../src/db/pool.js';
 import { org, platformOrg, setupApp, uid, userWithRole, type Ctx } from './helpers.js';
 
 let ctx: Ctx;
@@ -30,6 +30,13 @@ describe('database row-level security (R-003)', () => {
     expect(r).toEqual({ u: 'rmn_app', su: false, bypass: false });
     // So it cannot switch off ledger protections (R-002).
     await expect(ctx.db.query('ALTER TABLE journal_entries DISABLE TRIGGER ALL')).rejects.toThrow(/must be owner/);
+  });
+
+  it('fails closed: if the restricted role cannot be assumed, queries error (nothing runs as the login role) and the process survives', async () => {
+    const bad = createPool(ctx.config.DATABASE_URL, { runtimeRole: 'rmn_role_that_does_not_exist' });
+    await expect(bad.query('SELECT current_user')).rejects.toThrow(/does not exist/);
+    await expect(bad.query('SELECT current_user')).rejects.toThrow(/does not exist/); // every new connection, not just the first
+    await bad.end();
   });
 
   it('a route that forgets its tenant filter still only sees the caller’s organization', async () => {

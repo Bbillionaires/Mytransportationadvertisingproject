@@ -13,7 +13,7 @@ const scopeStore = new AsyncLocalStorage<string>();
 export const runWithDbScope = <T>(scope: string, fn: () => T): T => scopeStore.run(scope, fn);
 export const currentDbScope = () => scopeStore.getStore() ?? '';
 
-type ScopedClient = pg.PoolClient & { rmnScope?: string };
+type ScopedClient = pg.PoolClient & { rmnScope?: string; rmnRoleSet?: boolean };
 
 /**
  * A pg Pool that (1) switches every new connection to the restricted runtime role, so row-level security and
@@ -24,7 +24,8 @@ type ScopedClient = pg.PoolClient & { rmnScope?: string };
 class ScopedPool extends pg.Pool {
   constructor(config: pg.PoolConfig, private readonly runtimeRole: string) {
     super(config);
-    if (runtimeRole) this.on('connect', (c) => { c.query(`SET ROLE ${pg.escapeIdentifier(runtimeRole)}`).catch((e) => this.emit('error', e, c)); });
+    // Idle connections can drop (database restart, network); log instead of crashing the process.
+    this.on('error', (e) => console.error(JSON.stringify({ level: 'error', msg: 'idle database connection error', error: e.message })));
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -32,6 +33,12 @@ class ScopedPool extends pg.Pool {
     const scope = currentDbScope();
     const p = (async () => {
       const client = (await super.connect()) as ScopedClient;
+      // Fail closed: a connection is never handed out until it runs as the restricted role. If SET ROLE fails (e.g.
+      // migrations have not created the role), the connection is destroyed and the caller gets an error.
+      if (this.runtimeRole && !client.rmnRoleSet) {
+        try { await client.query(`SET ROLE ${pg.escapeIdentifier(this.runtimeRole)}`); client.rmnRoleSet = true; }
+        catch (e) { client.release(e as Error); throw e; }
+      }
       if (client.rmnScope !== scope) {
         try { await client.query(`SELECT set_config('rmn.scope', $1, false)`, [scope]); client.rmnScope = scope; }
         catch (e) { client.release(e as Error); throw e; }
