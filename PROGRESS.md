@@ -197,7 +197,7 @@ Test totals: finance-core 28, API 127.
 | Invitations (single-use, 7 days, revocable, role/org-kind checks, existing-account attach) | ✅ | `accounts.test.ts` |
 | Support actions: unlock, disable, enable, MFA reset (reason, audited, not on self) | ✅ | `accounts.test.ts` |
 | Support impersonation (≤30 min, ticket + reason, both identities audited, user notified, staff excluded, ends on demand) | ✅ | `accounts.test.ts` |
-| Transactional email outbox + delivery job (bodies purged after send); production provider pending (D-044) | ✅ / ⬜ | `accounts.test.ts` |
+| Transactional email outbox + delivery job (bodies purged after send); Resend adapter with idempotent retries; provider/domain choice pending (D-044) | ✅ / ⬜ | `accounts.test.ts`, `email.test.ts` |
 | Prometheus `/metrics` with business health gauges | ✅ | `accounts.test.ts` |
 | Console: verify/reset/invite link handling, forgot-password | ✅ | browser-checked |
 | Purge jobs for nonces/heartbeats (M1.10), OpenTelemetry tracing | ⬜ | |

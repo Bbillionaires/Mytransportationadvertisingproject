@@ -26,6 +26,7 @@ Cron services must exit when done; all these commands do. Turn the pre-deploy mi
 | `PAYMENTS_PROVIDER` | `disabled` until Stripe is connected (Stripe is last, by the product owner's choice). Checkout then says "Payments are not enabled yet", and webhooks are refused |
 | `MEDIA_STORE` + `MEDIA_S3_*` | from the `media` bucket (docs/MEDIA_STORAGE.md) |
 | `BACKUP1_S3_*` | AWS backup bucket and key, **sealed**. Worker and verify-media only |
+| `EMAIL_PROVIDER`, `EMAIL_FROM`, `RESEND_API_KEY` | `resend`, e.g. `Rides <no-reply@mail.example.com>` (a domain verified in Resend with SPF/DKIM), and the API key, **sealed**. Worker only |
 | `METRICS_TOKEN` | random 32+ characters, to scrape `/metrics` |
 | `LOG_LEVEL` | `info` |
 
@@ -41,7 +42,7 @@ Cron services must exit when done; all these commands do. Turn the pre-deploy mi
 5. In the portal: draft the real revenue rules and have them approved by two different approvers with signed contract references. Then invite fleets, advertisers and creators.
 
 ## Not yet available in production
-- **Email** (D-044): there's no email provider yet, so invitation and password emails are only written to the worker's logs. Choose a provider (for example Resend) before inviting real users. Until then the bootstrap link is printed directly.
+- **Email** (D-044): the Resend adapter is built. Until a sending domain is verified and `EMAIL_PROVIDER=resend` is set, emails are not sent: production logs show only the recipient and subject (bodies hold one-time links, so they are withheld). Don't invite real users until email works. The bootstrap link is printed directly, so the first admin doesn't need email.
 - **Payments**: disabled until the Stripe test-mode round trip (R-025), and live mode stays locked (D-010).
 - **Seed data**: `db:seed` refuses to run in production by design.
 

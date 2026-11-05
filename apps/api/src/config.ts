@@ -55,6 +55,12 @@ const schema = z.object({
   METRICS_TOKEN: z.string().min(24).optional(),
   /** Seconds-scale cache of each campaign's budget decision for playlists (0 disables; tests use 0). See playlist.ts. */
   PLAYLIST_BUDGET_CACHE_MS: z.coerce.number().int().min(0).max(60_000).optional(),
+  /** Outgoing email (D-044). 'log' = development (production: recipients only, never bodies); 'resend' = Resend API. */
+  EMAIL_PROVIDER: z.enum(['log', 'resend']).default('log'),
+  RESEND_API_KEY: z.string().regex(/^re_[A-Za-z0-9_]+$/, 'RESEND_API_KEY must look like re_…').optional(),
+  /** Sender address on a domain verified in Resend, e.g. "Rideshare Media <no-reply@rides.example.com>". */
+  EMAIL_FROM: z.string().min(3).max(200).optional(),
+  RESEND_API_URL: z.string().url().default('https://api.resend.com'),
   /** Development only: run media/webhook/email/validation jobs inside the API process. */
   DEV_IN_PROCESS_JOBS: z.enum(['true', 'false']).default('false'),
   /** Live money movement is hard-disabled until explicitly approved (see DECISIONS.md D-010). */
@@ -78,6 +84,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (parsed.data.PAYMENTS_PROVIDER === 'stripe' && !parsed.data.STRIPE_SECRET_KEY) throw new Error('PAYMENTS_PROVIDER=stripe requires STRIPE_SECRET_KEY (test mode)');
   if (parsed.data.NODE_ENV === 'production' && parsed.data.PAYMENTS_PROVIDER === 'fake') throw new Error('the fake payment provider cannot run in production');
   if (parsed.data.MEDIA_STORE === 's3' && !(parsed.data.MEDIA_S3_BUCKET && parsed.data.MEDIA_S3_ACCESS_KEY_ID && parsed.data.MEDIA_S3_SECRET_ACCESS_KEY)) throw new Error('MEDIA_STORE=s3 requires MEDIA_S3_BUCKET, MEDIA_S3_ACCESS_KEY_ID and MEDIA_S3_SECRET_ACCESS_KEY');
+  if (parsed.data.EMAIL_PROVIDER === 'resend' && !(parsed.data.RESEND_API_KEY && parsed.data.EMAIL_FROM)) throw new Error('EMAIL_PROVIDER=resend requires RESEND_API_KEY and EMAIL_FROM');
   parsed.data.PLAYLIST_BUDGET_CACHE_MS ??= parsed.data.NODE_ENV === 'test' ? 0 : 5000;
   if (parsed.data.NODE_ENV === 'production' && parsed.data.DEV_IN_PROCESS_JOBS === 'true') throw new Error('DEV_IN_PROCESS_JOBS cannot be used in production');
   return parsed.data;

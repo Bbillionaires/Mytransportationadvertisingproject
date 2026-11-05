@@ -1,7 +1,7 @@
 import type { FastifyBaseLogger } from 'fastify';
 import type { Config } from '../config.js';
 import type { Db } from '../db/pool.js';
-import { deliverPendingEmail, LogEmailSender } from '../lib/email.js';
+import { deliverPendingEmail, emailSender } from '../lib/email.js';
 import { runValidation } from '../modules/events/validator.js';
 import { processPendingUploads } from '../modules/media/process.js';
 import { runBackups } from '../modules/media/backup.js';
@@ -14,7 +14,7 @@ import { processPendingWebhooks } from '../modules/payments/webhooks.js';
  */
 export function startInProcessJobs(db: Db, config: Config, log: FastifyBaseLogger): () => void {
   if (config.NODE_ENV === 'production') throw new Error('in-process jobs are for development only');
-  const email = new LogEmailSender();
+  const email = emailSender(config);
   const busy = new Set<string>();
   const every = (name: string, ms: number, fn: () => Promise<unknown>) => setInterval(async () => {
     if (busy.has(name)) return;

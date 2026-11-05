@@ -7,7 +7,7 @@
  */
 import { loadConfig } from '../config.js';
 import { createPool } from '../db/pool.js';
-import { deliverPendingEmail, LogEmailSender } from '../lib/email.js';
+import { deliverPendingEmail, emailSender } from '../lib/email.js';
 import { runValidation } from '../modules/events/validator.js';
 import { runBackups } from '../modules/media/backup.js';
 import { processPendingUploads } from '../modules/media/process.js';
@@ -15,7 +15,7 @@ import { processPendingWebhooks } from '../modules/payments/webhooks.js';
 
 const config = loadConfig();
 const db = createPool(config.DATABASE_URL);
-const email = new LogEmailSender(); // D-044: replace with the chosen email provider before inviting real users
+const email = emailSender(config); // EMAIL_PROVIDER=resend in production (D-044)
 const log = (o: Record<string, unknown>) => console.log(JSON.stringify({ t: new Date().toISOString(), ...o }));
 let stopping = false;
 for (const sig of ['SIGTERM', 'SIGINT'] as const) process.on(sig, () => { stopping = true; log({ msg: 'worker stopping', sig }); });
