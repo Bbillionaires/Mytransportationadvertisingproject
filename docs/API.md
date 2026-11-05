@@ -52,7 +52,8 @@ Error codes: `UNAUTHENTICATED` 401 · `FORBIDDEN` / `MFA_REQUIRED` / `SEPARATION
 | POST | `/v1/orgs/:orgId/devices/:deviceId/retire` | `device.manage` `{reason}`; key stops working at once, pending commands expire, serial freed for re-enrollment |
 | POST | `/v1/orgs/:orgId/devices/:deviceId/assignments` | `device.manage` `{vehicleId, driverId?}` |
 | POST | `/v1/orgs/:orgId/devices/:deviceId/commands` | `device.command` `{command: REFRESH_PLAYBACK\|SUSPEND\|RESUME\|UPDATE_CONFIG\|PURGE_RIDER_DATA}` |
-| POST | `/v1/devices/enroll` | enrollment code (5/min) `{code, serial, publicKey(base64 SPKI Ed25519 or ECDSA P-256), appVersion}` |
+| POST | `/v1/devices/enroll/challenge` | enrollment code (5/min) `{code}` → `{challenge}` (32 random bytes, base64, single use, 10 min) for hardware key attestation |
+| POST | `/v1/devices/enroll` | enrollment code (5/min) `{code, serial, publicKey(base64 SPKI Ed25519 or ECDSA P-256), appVersion, attestation?: {chain: [base64 DER, leaf first]}}` → `{deviceId, attestation: NONE\|VERIFIED\|UNTRUSTED_BOOT\|FAILED}`. `DEVICE_ATTESTATION=required` returns 403 unless VERIFIED |
 | POST | `/v1/devices/heartbeat` | **signed device** → `{deviceStatus, playbackAllowed, commands[]}` |
 | POST | `/v1/devices/commands/:id/ack` | **signed device** `{ok, detail?}` |
 

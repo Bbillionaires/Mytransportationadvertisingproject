@@ -418,6 +418,19 @@ AWS: the product owner is locked out of the new AWS account (MFA entry deleted) 
 ### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
 1. **Product owner:** approve creating the Railway project; regain AWS access (support), then create the backup bucket (docs/MEDIA_STORAGE.md).
 2. Email provider (D-044) before inviting real users.
-3. Android field test on one tablet with the chosen EMM (D-017); key attestation at enrollment (R-028).
+3. Android field test on one tablet with the chosen EMM (D-017).
 4. External penetration test (R-015) before the pilot.
 5. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).
+
+## 2026-11-05 — Session 25: email adapter and hardware key attestation (D-044, R-028, D-059)
+
+| Item | Status | Evidence |
+|---|---|---|
+| Resend email adapter (`EMAIL_PROVIDER=resend`): idempotency key per outbox row so retries never double-send; production log sender withholds bodies | ✅ | `email.test.ts` |
+| Hardware key attestation at enrollment: single-use challenge, Android shell `attest` op, server verifies the chain to Google's pinned roots, revocation list, challenge, key match, hardware origin, our package, verified boot + locked bootloader | ✅ | `attestation.test.ts` (synthetic chains for every rejection case; corrupted-input fuzz) |
+| Verified against a **real** Android TEE attestation chain (Google's open-source sample data) end to end to the pinned Google root | ✅ | `test/fixtures/google-sample-ec-tee-chain.json` |
+| `DEVICE_ATTESTATION=optional\|required`; fleet portal shows Hardware verified / Unlocked or modified / Hardware check failed | ✅ | `attestation.test.ts`; player e2e (older shell without `attest` still enrolls) |
+| `attest` refused once the key has signed (a compromised page can't wipe an enrolled tablet's key) | ✅ | `BridgeProtocolTest` |
+| Weekly `jobs:check-attestation-roots` (new Google root / revocation list reachable) | ✅ | run live: both roots pinned, 1,769 revoked keys listed |
+
+Not verified here: attestation on a physical tablet (the emulator and real devices are needed). Production should move to `DEVICE_ATTESTATION=required` once every tablet runs the shell (D-059).

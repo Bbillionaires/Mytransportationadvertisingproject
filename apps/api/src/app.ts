@@ -11,6 +11,7 @@ import { identityRoutes } from './modules/identity/routes.js';
 import { orgRoutes } from './modules/orgs/routes.js';
 import { fleetRoutes } from './modules/fleets/routes.js';
 import { deviceRoutes } from './modules/devices/routes.js';
+import type { AttestationTrust } from './modules/devices/attestation.js';
 import { ledgerRoutes } from './modules/ledger/routes.js';
 import { revenueRoutes } from './modules/revenue/routes.js';
 import { eventIngestRoutes } from './modules/events/ingest.js';
@@ -47,7 +48,7 @@ const PG_CLIENT_ERRORS: Record<string, [number, string]> = {
 /** Domain errors from @rmn/finance-core: the request violates a financial rule. */
 const FINANCE_RULE_ERRORS = new Set(['MoneyError', 'AllocationError', 'RuleError', 'WaterfallError', 'PartySplitError', 'PoolError']);
 
-export async function buildApp(opts: { config: Config; db: Db; logger?: boolean | object; paymentProvider?: PaymentProvider }): Promise<FastifyInstance> {
+export async function buildApp(opts: { config: Config; db: Db; logger?: boolean | object; paymentProvider?: PaymentProvider; attestationTrust?: AttestationTrust }): Promise<FastifyInstance> {
   const { config, db } = opts;
   const provider = opts.paymentProvider ?? (config.PAYMENTS_PROVIDER === 'stripe' ? new StripeProvider(config.STRIPE_SECRET_KEY!) : config.PAYMENTS_PROVIDER === 'disabled' ? new DisabledPaymentProvider() : new FakePaymentProvider(`${config.APP_PUBLIC_URL}/dev/checkout`));
   const app = Fastify({
@@ -119,7 +120,7 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
   await app.register(impersonationRoutes, { db });
   await app.register(orgRoutes, { db });
   await app.register(fleetRoutes, { db });
-  await app.register(deviceRoutes, { db, config });
+  await app.register(deviceRoutes, { db, config, attestationTrust: opts.attestationTrust });
   await app.register(ledgerRoutes, { db, provider });
   await app.register(revenueRoutes, { db });
   await app.register(eventIngestRoutes, { db, config });

@@ -216,6 +216,7 @@ export const poll = (fn: () => Promise<void>, ms = 30_000) => { stopPolling(); p
 interface Device {
   id: string; serial: string; label: string | null; status: 'ACTIVE' | 'SUSPENDED' | 'RETIRED'; app_version: string | null; storage_free_bytes: string | null;
   last_heartbeat_at: string | null; online: boolean | null; vehicle_id: string | null; vehicle_label: string | null; pending_commands: number; keyType: string;
+  attestation_status: 'NONE' | 'VERIFIED' | 'UNTRUSTED_BOOT' | 'FAILED'; attestation_security_level: string | null;
 }
 interface Vehicle { id: string; fleet_id: string; label: string; make_model: string | null; status?: string }
 interface Fleet { id: string; name: string; market: string; timezone: string }
@@ -234,6 +235,15 @@ function issues(d: Device): string[] {
   return out;
 }
 const tabletName = (d: Device) => d.label || d.serial;
+/** Hardware key attestation result (R-028): proven by Android's secure hardware and Google's certificate chain. */
+const keyTrustChip = (d: Device) => d.attestation_status === 'VERIFIED' ? chip(d.attestation_security_level === 'STRONGBOX' ? 'Hardware verified (StrongBox)' : 'Hardware verified', 'ok')
+  : d.attestation_status === 'UNTRUSTED_BOOT' ? chip('Unlocked or modified', 'warn') : d.attestation_status === 'FAILED' ? chip('Hardware check failed', 'err') : null;
+const KEY_TRUST_TEXT: Record<Device['attestation_status'], string> = {
+  VERIFIED: 'Hardware verified: Android’s secure chip proved at setup that this tablet’s key was created inside it and can’t be copied, and that the tablet runs unmodified software.',
+  UNTRUSTED_BOOT: 'Warning: the key is in secure hardware, but the tablet’s bootloader is unlocked or its software is not verified. Treat it as untrusted and re-flash it.',
+  FAILED: 'Hardware check failed at setup. The tablet may be emulated or tampered with. Retire it and enroll a known-good tablet.',
+  NONE: '',
+};
 
 async function fleetOverview() {
   const [devices, vehicles] = await Promise.all([loadDevices(), loadVehicles()]);
@@ -276,7 +286,7 @@ async function fleetTablets() {
       el('td', {}, el('div', {}, tabletName(d)), d.label ? el('div', { class: 'sub' }, d.serial) : null),
       el('td', {}, statusChip, el('div', { class: 'sub' }, `seen ${ago(d.last_heartbeat_at)}`)),
       el('td', {}, d.vehicle_label ?? el('span', { class: 'muted' }, '—')),
-      el('td', {}, d.keyType === 'ECDSA_P256' ? chip('Android app') : chip('Web player'), d.pending_commands ? el('div', { class: 'sub' }, `${d.pending_commands} command(s) waiting`) : null),
+      el('td', {}, d.keyType === 'ECDSA_P256' ? chip('Android app') : chip('Web player'), keyTrustChip(d), d.pending_commands ? el('div', { class: 'sub' }, `${d.pending_commands} command(s) waiting`) : null),
       el('td', {}, actions));
   });
   render(el('h1', {}, 'Tablets'),
@@ -319,6 +329,7 @@ async function tabletDetails(d: Device) {
   }, 'btn danger');
   await info(`Tablet ${tabletName(d)}`,
     el('p', { class: 'muted' }, `Serial ${d.serial} · ${d.keyType === 'ECDSA_P256' ? 'Android app (device key in Android Keystore)' : 'Web player (browser-held key)'} · version ${d.app_version ?? '?'}`),
+    el('p', { class: 'muted' }, KEY_TRUST_TEXT[d.attestation_status] ?? ''),
     el('p', { class: 'muted' }, `Last check-in ${d.last_heartbeat_at ? fmtDate(d.last_heartbeat_at) : 'never'}${d.storage_free_bytes ? ` · ${(Number(d.storage_free_bytes) / 1024 ** 3).toFixed(1)} GB free` : ''}`),
     can('device.manage') ? labelForm : null,
     el('h2', {}, 'Recent commands'),

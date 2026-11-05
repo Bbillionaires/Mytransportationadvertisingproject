@@ -56,6 +56,12 @@ const schema = z.object({
   /** Seconds-scale cache of each campaign's budget decision for playlists (0 disables; tests use 0). See playlist.ts. */
   PLAYLIST_BUDGET_CACHE_MS: z.coerce.number().int().min(0).max(60_000).optional(),
   /** Outgoing email (D-044). 'log' = development (production: recipients only, never bodies); 'resend' = Resend API. */
+  /**
+   * Android hardware key attestation at enrollment (R-028). optional: verify and record when the tablet sends it (web
+   * players and older shells still enroll); required: refuse tablets without a valid hardware attestation, verified
+   * boot and a locked bootloader; off: ignore it.
+   */
+  DEVICE_ATTESTATION: z.enum(['off', 'optional', 'required']).default('optional'),
   EMAIL_PROVIDER: z.enum(['log', 'resend']).default('log'),
   RESEND_API_KEY: z.string().regex(/^re_[A-Za-z0-9_]+$/, 'RESEND_API_KEY must look like re_…').optional(),
   /** Sender address on a domain verified in Resend, e.g. "Rideshare Media <no-reply@rides.example.com>". */

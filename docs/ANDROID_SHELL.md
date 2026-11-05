@@ -39,11 +39,24 @@ Debug builds (`net.ridesharemedia.shell.debug`) default to `http://10.0.2.2:8080
 For a fleet rollout, use an EMM with Android Enterprise dedicated-device enrollment (QR / zero-touch). The EMM vendor is **DECISION REQUIRED** (D-017).
 
 ## Testing
-- JVM unit tests: `UrlPolicyTest` (origin validation and navigation lock) and `BridgeProtocolTest` (signatures verify; refuses non-device payloads, unknown ops and malformed input).
+- JVM unit tests: `UrlPolicyTest` (origin validation and navigation lock) and `BridgeProtocolTest` (signatures verify; refuses non-device payloads, unknown ops and malformed input; `attest` only before the key is used).
 - The player browser e2e runs a second tablet through a **simulated bridge** with the same protocol and allow-list, using ECDSA P-256 with DER signatures. This proves the web player and API work end to end with a hardware-style key.
 - Not automated yet: an instrumented test on an emulator, and real-device kiosk and boot checks (R-004).
 
+## Hardware key attestation (R-028, D-059)
+At enrollment the player asks the server for a single-use challenge (`POST /v1/devices/enroll/challenge`) and passes it to the shell (`attest` bridge op). The shell regenerates its Keystore key with that challenge, so Android's secure hardware issues a certificate chain for the key, ending in a Google attestation root. The server (`apps/api/src/modules/devices/attestation.ts`) checks:
+- each certificate is signed by the next, the chain ends in one of Google's two pinned roots, the issuing certificates are in date, and none is on Google's revocation list (fetched hourly; enrollment still works, and records it, if the list is unreachable)
+- the certified key is exactly the key being enrolled, and the challenge matches (so a chain can't be reused)
+- the key was generated (not imported) in a TEE or StrongBox, by `net.ridesharemedia.shell`
+- the root of trust: verified boot and a locked bootloader
+
+The result is shown in the fleet portal: **Hardware verified**, **Unlocked or modified**, or **Hardware check failed**. `DEVICE_ATTESTATION=optional` (default) records the result and still enrolls web players and older shells. `required` refuses anything that is not hardware verified.
+
+`attest` works only while the key has never signed a request, so a compromised page can't use it to wipe an enrolled tablet's identity. `npm run jobs:check-attestation-roots -w @rmn/api` (weekly) warns when Google publishes a root that isn't pinned yet.
+
+Verified against Google's real sample chains (`google/android-key-attestation` test data): a real TEE chain verifies end to end to the pinned Google root (`test/fixtures/google-sample-ec-tee-chain.json`). Not yet tested on a physical tablet.
+
 ## Not yet done
-- Play Integrity / key attestation sent at enrollment, so the server can prove the key is hardware-backed (R-028).
+- Physical-tablet check of attestation (and Play Integrity for app-integrity signals, optional).
 - Large offline media cache with expiry enforcement in the shell (R-029).
 - OTA update policy through the EMM; per-OEM kiosk quirks.

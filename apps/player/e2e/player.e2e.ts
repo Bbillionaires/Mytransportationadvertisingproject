@@ -275,7 +275,8 @@ async function main() {
     await shell.fill('#code', code2);
     await shell.click('#setup-form button');
     await shell.waitForSelector('#idle:has-text("Waiting for vehicle assignment")', { timeout: 15_000 });
-    const [andDev] = await q(`SELECT id, app_version, public_key_der FROM devices WHERE serial LIKE 'AND-%'`);
+    const [andDev] = await q(`SELECT id, app_version, public_key_der, attestation_status FROM devices WHERE serial LIKE 'AND-%'`);
+    assert.equal(andDev.attestation_status, 'NONE', 'a shell without the attest op (older version) still enrolls, unattested');
     assert.match(andDev.app_version, /\+android-/);
     assert.ok((await import('node:crypto')).createPublicKey({ key: andDev.public_key_der, format: 'der', type: 'spki' }).asymmetricKeyType === 'ec', 'device key is ECDSA');
     const signCalls = await shell.evaluate(() => (window as any).__bridgeSignCalls as number);

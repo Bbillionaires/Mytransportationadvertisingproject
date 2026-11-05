@@ -12,8 +12,15 @@ import java.util.Base64
 
 class BridgeProtocolTest {
     private val kp = KeyPairGenerator.getInstance("EC").apply { initialize(ECGenParameterSpec("secp256r1")) }.generateKeyPair()
+    private var signed = false
+    private var attestedWith: ByteArray? = null
     private val signer = object : BridgeProtocol.KeySigner {
-        override fun sign(data: ByteArray): ByteArray = Signature.getInstance("SHA256withECDSA").run { initSign(kp.private); update(data); sign() }
+        override fun sign(data: ByteArray): ByteArray { signed = true; return Signature.getInstance("SHA256withECDSA").run { initSign(kp.private); update(data); sign() } }
+        override fun everSigned() = signed
+        override fun attest(challenge: ByteArray): BridgeProtocol.Attestation {
+            attestedWith = challenge
+            return BridgeProtocol.Attestation(Base64.getEncoder().encodeToString(kp.public.encoded), listOf(byteArrayOf(1, 2), byteArrayOf(3, 4)))
+        }
     }
     private val bridge = BridgeProtocol(signer) { JSONObject().put("algorithm", "ECDSA_P256").put("serial", "AND-test") }
     private fun b64(s: String) = Base64.getEncoder().encodeToString(s.toByteArray())
@@ -47,6 +54,23 @@ class BridgeProtocolTest {
         }
         assertFalse(JSONObject(bridge.handle("not json")).getBoolean("ok"))
         assertFalse(JSONObject(bridge.handle("""{"id":4,"op":"export_private_key"}""")).getBoolean("ok"))
+    }
+
+    @Test fun attestsOnlyBeforeTheKeyIsEverUsed() {
+        val challenge = ByteArray(32) { it.toByte() }
+        val req = JSONObject().put("id", 5).put("op", "attest").put("challenge", Base64.getEncoder().encodeToString(challenge)).toString()
+        val r = JSONObject(bridge.handle(req))
+        assertTrue(r.toString(), r.getBoolean("ok"))
+        assertEquals(2, r.getJSONObject("result").getJSONArray("chain").length())
+        assertTrue(challenge.contentEquals(attestedWith))
+
+        assertFalse("tiny challenge refused", JSONObject(bridge.handle(JSONObject().put("id", 6).put("op", "attest").put("challenge", "AAAA").toString())).getBoolean("ok"))
+
+        bridge.handle(JSONObject().put("id", 7).put("op", "sign").put("data", b64(validPayload)).toString())
+        attestedWith = null
+        val again = JSONObject(bridge.handle(req))
+        assertFalse("once enrolled and signing, the key cannot be replaced from the page", again.getBoolean("ok"))
+        assertEquals(null, attestedWith)
     }
 
     @Test fun payloadPatternMatchesEveryPlayerEndpoint() {

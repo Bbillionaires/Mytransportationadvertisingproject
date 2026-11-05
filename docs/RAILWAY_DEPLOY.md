@@ -13,6 +13,7 @@
 | **allocate-commissions** (cron) | same | `npm run jobs:allocate-commissions` | Daily |
 | **verify-media** (cron) | same | `npm run jobs:verify-media` | Nightly; add a monthly `-- --deep` |
 | **verify-spend-counters** (cron) | same | `npm run jobs:verify-spend-counters` | Nightly |
+| **check-attestation-roots** (cron) | same | `npm run jobs:check-attestation-roots` | Weekly; failure = Google published a new root to pin |
 
 Cron services must exit when done; all these commands do. Turn the pre-deploy migration off for every service except **api**, so migrations run once per deploy.
 
@@ -27,6 +28,7 @@ Cron services must exit when done; all these commands do. Turn the pre-deploy mi
 | `MEDIA_STORE` + `MEDIA_S3_*` | from the `media` bucket (docs/MEDIA_STORAGE.md) |
 | `BACKUP1_S3_*` | AWS backup bucket and key, **sealed**. Worker and verify-media only |
 | `EMAIL_PROVIDER`, `EMAIL_FROM`, `RESEND_API_KEY` | `resend`, e.g. `Rides <no-reply@mail.example.com>` (a domain verified in Resend with SPF/DKIM), and the API key, **sealed**. Worker only |
+| `DEVICE_ATTESTATION` | `optional` for the pilot; `required` once every tablet runs the Android shell (D-059) |
 | `METRICS_TOKEN` | random 32+ characters, to scrape `/metrics` |
 | `LOG_LEVEL` | `info` |
 

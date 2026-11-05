@@ -22,14 +22,18 @@ import java.util.UUID
 class DeviceKey(private val context: Context) : BridgeProtocol.KeySigner {
     private val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
 
-    init { if (!ks.containsAlias(ALIAS)) generate() }
+    private val prefs = context.getSharedPreferences("shell", Context.MODE_PRIVATE)
 
-    private fun generate() {
+    init { if (!ks.containsAlias(ALIAS)) generate(null) }
+
+    /** With a challenge, the secure hardware also issues an attestation certificate chain for the new key (R-028). */
+    private fun generate(challenge: ByteArray?) {
         fun spec(strongBox: Boolean) = KeyGenParameterSpec.Builder(ALIAS, KeyProperties.PURPOSE_SIGN)
             .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
             .setDigests(KeyProperties.DIGEST_SHA256)
             .setUserAuthenticationRequired(false)
             .apply { if (strongBox) setIsStrongBoxBacked(true) }
+            .apply { if (challenge != null) setAttestationChallenge(challenge) }
             .build()
         val gen = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, "AndroidKeyStore")
         try { gen.initialize(spec(strongBox = true)); gen.generateKeyPair() }
@@ -39,7 +43,21 @@ class DeviceKey(private val context: Context) : BridgeProtocol.KeySigner {
     /** X.509 SubjectPublicKeyInfo, base64 — the format the server's enrollment endpoint expects. */
     fun publicKeySpkiB64(): String = Base64.getEncoder().encodeToString(ks.getCertificate(ALIAS).publicKey.encoded)
 
+    override fun everSigned(): Boolean = prefs.getBoolean("keyUsed", false)
+
+    /**
+     * Replaces the (never used) key with a fresh one bound to the server's enrollment challenge and returns the public key
+     * plus the attestation chain (leaf first, ending in a Google root). BridgeProtocol refuses this once the key has signed.
+     */
+    override fun attest(challenge: ByteArray): BridgeProtocol.Attestation {
+        ks.deleteEntry(ALIAS)
+        generate(challenge)
+        val chain = ks.getCertificateChain(ALIAS)?.map { it.encoded } ?: emptyList()
+        return BridgeProtocol.Attestation(publicKeySpkiB64(), chain)
+    }
+
     override fun sign(data: ByteArray): ByteArray {
+        if (!everSigned()) prefs.edit().putBoolean("keyUsed", true).commit() // durable before the first signature leaves
         val key = ks.getKey(ALIAS, null) as PrivateKey
         return Signature.getInstance("SHA256withECDSA").run { initSign(key); update(data); sign() } // DER-encoded
     }
@@ -52,7 +70,6 @@ class DeviceKey(private val context: Context) : BridgeProtocol.KeySigner {
 
     /** Random per-install serial (no hardware identifiers, for privacy). */
     fun serial(): String {
-        val prefs = context.getSharedPreferences("shell", Context.MODE_PRIVATE)
         return prefs.getString("serial", null) ?: ("AND-" + UUID.randomUUID().toString().replace("-", "").take(12)).also { prefs.edit().putString("serial", it).apply() }
     }
 

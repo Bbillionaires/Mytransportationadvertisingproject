@@ -34,7 +34,7 @@ class Native {
     const id = ++this.seq;
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
-      setTimeout(() => { if (this.pending.delete(id)) reject(new Error('native bridge timeout')); }, 10_000);
+      setTimeout(() => { if (this.pending.delete(id)) reject(new Error('native bridge timeout')); }, op === 'attest' ? 30_000 : 10_000); // key generation in StrongBox can take seconds
       this.bridge.postMessage(JSON.stringify({ id, op, ...extra }));
     });
   }
@@ -61,17 +61,27 @@ export class Device {
   static async enroll(code: string): Promise<Device> {
     const native = Native.get();
     let keys: KeyRef, publicKey: string, serial: string, appVersion = APP_VERSION;
+    let attestation: { chain: string[] } | undefined;
     if (native) {
       const info = await native.request<{ publicKey: string; serial: string; shellVersion?: string }>('info');
       keys = 'native'; publicKey = info.publicKey; serial = info.serial;
       appVersion = `${APP_VERSION}+android-${info.shellVersion ?? '?'}`;
+      // Hardware key attestation (R-028): the shell regenerates its key bound to a server challenge and returns Google's
+      // certificate chain. Older shells, or devices without attestation, fall back to plain enrollment.
+      try {
+        const ch = await fetch('/v1/devices/enroll/challenge', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: code.trim() }) });
+        if (ch.ok) {
+          const a = await native.request<{ publicKey: string; chain: string[] }>('attest', { challenge: (await ch.json()).challenge });
+          publicKey = a.publicKey; attestation = { chain: a.chain };
+        }
+      } catch { /* attestation unavailable: enroll without it (the server decides whether that is allowed) */ }
     } else {
       const pair = (await crypto.subtle.generateKey({ name: 'Ed25519' }, false, ['sign', 'verify'])) as CryptoKeyPair;
       keys = pair; publicKey = b64(await crypto.subtle.exportKey('spki', pair.publicKey));
       serial = `WEB-${hex(crypto.getRandomValues(new Uint8Array(6)).buffer)}`;
     }
     const res = await fetch('/v1/devices/enroll', { method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ code: code.trim(), serial, publicKey, appVersion, osVersion: navigator.userAgent.slice(0, 100) }) });
+      body: JSON.stringify({ code: code.trim(), serial, publicKey, appVersion, osVersion: navigator.userAgent.slice(0, 100), ...(attestation ? { attestation } : {}) }) });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) throw new ApiError(res.status, j.error?.code ?? 'ERROR', j.error?.message ?? 'enrollment failed');
     await kvSet('keys', keys); await kvSet('serial', serial); await kvSet('appVersion', appVersion); await kvSet('deviceId', j.deviceId);

@@ -127,6 +127,17 @@ async function main() {
     await page.click('#label-form button');
     await page.waitForSelector('#tablets tr:has-text("CAB-104 rear")');
 
+    step('hardware attestation result is visible (set directly here; the web player itself cannot attest)');
+    await q(`UPDATE devices SET attestation_status = 'VERIFIED', attestation_security_level = 'STRONGBOX' WHERE label = 'CAB-104 rear'`);
+    await nav(page, 'Overview'); await nav(page, 'Tablets');
+    await page.waitForSelector('#tablets tr:has-text("CAB-104 rear") .chip.ok:has-text("Hardware verified (StrongBox)")');
+    await page.click('#tablets tr:has-text("CAB-104 rear") button:has-text("Details")');
+    await page.waitForSelector('#dlg p:has-text("can’t be copied")');
+    await page.keyboard.press('Escape');
+    await q(`UPDATE devices SET attestation_status = 'UNTRUSTED_BOOT' WHERE label = 'CAB-104 rear'`);
+    await nav(page, 'Overview'); await nav(page, 'Tablets');
+    await page.waitForSelector('#tablets tr:has-text("CAB-104 rear") .chip.warn:has-text("Unlocked or modified")');
+
     step('overview shows the healthy fleet');
     await nav(page, 'Overview');
     await page.waitForSelector('#stat-online .n:has-text("1")');

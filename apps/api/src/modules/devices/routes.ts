@@ -4,12 +4,14 @@ import type { Config } from '../../config.js';
 import type { Db } from '../../db/pool.js';
 import { withTx } from '../../db/pool.js';
 import { audit } from '../../lib/audit.js';
+import { randomBytes } from 'node:crypto';
 import { deviceKeyType, deviceSigningPayload, parseDevicePublicKey, randomToken, sha256hex, verifyDeviceSignature } from '../../lib/crypto.js';
-import { badRequest, conflict, notFound, unauthorized } from '../../lib/errors.js';
+import { badRequest, conflict, forbidden, notFound, unauthorized } from '../../lib/errors.js';
 import { parse, uuid } from '../../lib/validation.js';
 import { actorOf, authorize } from '../../auth/context.js';
 import { loadOrg } from '../orgs/routes.js';
 import { endTabletSessions } from '../riders/routes.js';
+import { AttestationError, googleAttestationTrust, verifyAttestation, type AttestationTrust } from './attestation.js';
 
 /**
  * Verifies an Ed25519-signed device request:
@@ -35,7 +37,8 @@ export async function authenticateDevice(db: Db, config: Config, req: FastifyReq
   return { deviceId: dev.id as string, orgId: dev.org_id as string, status: dev.status as 'ACTIVE' | 'SUSPENDED', deviceTime: new Date(Number(ts) * 1000) };
 }
 
-export async function deviceRoutes(app: FastifyInstance, { db, config }: { db: Db; config: Config }) {
+export async function deviceRoutes(app: FastifyInstance, { db, config, attestationTrust }: { db: Db; config: Config; attestationTrust?: AttestationTrust }) {
+  const trust = attestationTrust ?? googleAttestationTrust();
   const fleetOrg = async (orgId: string) => {
     const org = await loadOrg(db, orgId);
     if (org.kind !== 'FLEET_OPERATOR') throw notFound('fleet operator not found');
@@ -90,6 +93,7 @@ export async function deviceRoutes(app: FastifyInstance, { db, config }: { db: D
     await authorize(db, req, 'device.read', orgId);
     const r = await db.query(
       `SELECT d.id, d.serial, d.label, d.status, d.app_version, d.os_version, d.storage_free_bytes, d.connectivity, d.last_heartbeat_at, d.last_sync_at, d.enrolled_at,
+              d.attestation_status, d.attestation_security_level, d.attestation_boot_state, d.attested_at,
               d.public_key_der, a.vehicle_id, v.label AS vehicle_label, a.driver_id, (d.last_heartbeat_at > now() - interval '10 minutes') AS online,
               (SELECT count(*)::int FROM device_commands c WHERE c.device_id = d.id AND c.status IN ('PENDING','DELIVERED')) AS pending_commands
          FROM devices d LEFT JOIN device_assignments a ON a.device_id = d.id AND a.ends_at IS NULL LEFT JOIN vehicles v ON v.id = a.vehicle_id
@@ -203,28 +207,68 @@ export async function deviceRoutes(app: FastifyInstance, { db, config }: { db: D
   });
 
   // ----- tablet side -----
+  /** Step 1 for tablets that can prove a hardware key (Android shell): a fresh, single-use challenge bound to the code. */
+  app.post('/v1/devices/enroll/challenge', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req) => {
+    const b = parse(z.object({ code: z.string().min(10).max(100) }), req.body);
+    const challenge = randomBytes(32);
+    const r = await db.query(
+      `UPDATE device_enrollment_codes SET attestation_challenge = $2, challenge_expires_at = now() + interval '10 minutes'
+        WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now() RETURNING challenge_expires_at`,
+      [sha256hex(b.code), challenge],
+    );
+    if (!r.rows[0]) throw unauthorized('invalid or expired enrollment code');
+    return { challenge: challenge.toString('base64'), expiresAt: r.rows[0].challenge_expires_at };
+  });
+
   app.post('/v1/devices/enroll', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req, reply) => {
     const b = parse(z.object({
       code: z.string().min(10).max(100), serial: z.string().min(3).max(100), publicKey: z.string().min(40).max(200),
       appVersion: z.string().max(50), osVersion: z.string().max(100).optional(),
+      attestation: z.object({ chain: z.array(z.string().min(100).max(16_000)).min(2).max(10) }).optional(),
     }), req.body);
     let der: Buffer;
     try { der = parseDevicePublicKey(b.publicKey); } catch { throw badRequest('publicKey must be a base64 DER SPKI Ed25519 or ECDSA P-256 key'); }
+    const mode = config.DEVICE_ATTESTATION;
+    if (mode === 'required' && !b.attestation) throw forbidden('this network only accepts tablets that prove a hardware key; install the Android shell (docs/ANDROID_SHELL.md)');
+    if (b.attestation && mode !== 'off') await trust.revokedSerials(); // warm the revocation-list cache outside the transaction
     const out = await withTx(db, async (tx) => {
-      const c = await tx.query(`SELECT id, org_id, label FROM device_enrollment_codes WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now() FOR UPDATE`, [sha256hex(b.code)]);
-      if (!c.rows[0]) throw unauthorized('invalid or expired enrollment code');
+      const c = await tx.query(
+        `SELECT id, org_id, label, attestation_challenge, challenge_expires_at > now() AS challenge_live
+           FROM device_enrollment_codes WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now() FOR UPDATE`, [sha256hex(b.code)]);
+      const code = c.rows[0];
+      if (!code) throw unauthorized('invalid or expired enrollment code');
       const exists = await tx.query('SELECT 1 FROM devices WHERE serial = $1', [b.serial]);
       if (exists.rows[0]) throw conflict('a device with this serial is already enrolled; retire it first');
+
+      // Hardware attestation (R-028). The challenge is consumed with the code, so a chain can never be replayed.
+      let att: { status: string; level: string | null; boot: string | null; failure: string | null } = { status: 'NONE', level: null, boot: null, failure: null };
+      if (b.attestation && mode !== 'off') {
+        try {
+          if (!code.attestation_challenge || !code.challenge_live) throw new AttestationError('no live challenge; request one from /v1/devices/enroll/challenge first');
+          const r = await verifyAttestation({ chainB64: b.attestation.chain, publicKeyDer: der, challenge: code.attestation_challenge, trust });
+          const trustedBoot = r.bootState === 'VERIFIED' && r.deviceLocked;
+          att = { status: trustedBoot ? 'VERIFIED' : 'UNTRUSTED_BOOT', level: r.securityLevel, boot: `${r.bootState}${r.deviceLocked ? '' : ', unlocked'}`, failure: null };
+        } catch (e) {
+          if (!(e instanceof AttestationError)) throw e;
+          att = { status: 'FAILED', level: null, boot: null, failure: e.reason.slice(0, 300) };
+        }
+        if (mode === 'required' && att.status !== 'VERIFIED') {
+          throw forbidden(att.status === 'FAILED' ? `hardware attestation failed: ${att.failure}` : 'this tablet\'s bootloader is unlocked or its software is not verified; it cannot join the network');
+        }
+      }
       const d = await tx.query(
-        `INSERT INTO devices (org_id, serial, label, public_key_der, app_version, os_version, enrolled_via) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, org_id`,
-        [c.rows[0].org_id, b.serial, c.rows[0].label, der, b.appVersion, b.osVersion ?? null, c.rows[0].id],
+        `INSERT INTO devices (org_id, serial, label, public_key_der, app_version, os_version, enrolled_via,
+                              attestation_status, attestation_security_level, attestation_boot_state, attestation_failure, attested_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11, CASE WHEN $8 = 'NONE' THEN NULL ELSE now() END) RETURNING id, org_id`,
+        [code.org_id, b.serial, code.label, der, b.appVersion, b.osVersion ?? null, code.id, att.status, att.level, att.boot, att.failure],
       );
-      await tx.query('UPDATE device_enrollment_codes SET used_at = now(), device_id = $2 WHERE id = $1', [c.rows[0].id, d.rows[0].id]);
-      await audit(tx, { deviceId: d.rows[0].id, requestId: req.id }, 'device.enrolled', { type: 'device', id: d.rows[0].id, orgId: d.rows[0].org_id }, { serial: b.serial, appVersion: b.appVersion });
-      return d.rows[0];
+      await tx.query('UPDATE device_enrollment_codes SET used_at = now(), device_id = $2, attestation_challenge = NULL WHERE id = $1', [code.id, d.rows[0].id]);
+      await audit(tx, { deviceId: d.rows[0].id, requestId: req.id }, 'device.enrolled', { type: 'device', id: d.rows[0].id, orgId: d.rows[0].org_id },
+        { serial: b.serial, appVersion: b.appVersion, attestation: att.status, securityLevel: att.level, bootState: att.boot, attestationFailure: att.failure });
+      return { ...d.rows[0], attestation: att.status };
     });
     reply.code(201);
-    return { deviceId: out.id };
+    return { deviceId: out.id, attestation: out.attestation };
   });
 
   app.post('/v1/devices/heartbeat', async (req) => {
