@@ -353,7 +353,9 @@ async function fleetAddTablet() {
       await fleetAddTablet();
     } catch (err) { toast(errText(err), true); }
   });
-  const codes = (await api('GET', `${base()}/devices/enrollment-codes`)).items as any[];
+  const [codesRes, policy] = await Promise.all([api('GET', `${base()}/devices/enrollment-codes`),
+    api<{ requireHardwareAttestation: boolean; networkMode: 'off' | 'optional' | 'required'; unverifiedTablets: number }>('GET', `${base()}/devices/policy`)]);
+  const codes = codesRes.items as any[];
   render(el('h1', {}, 'Add a tablet'),
     el('div', { class: 'card' }, el('h2', {}, '1. Install'),
       el('p', {}, 'Android tablet: install the Ride Screen app through your device management (EMM) or for a pilot with adb. Any other tablet: open '),
@@ -361,6 +363,7 @@ async function fleetAddTablet() {
       el('p', { class: 'muted' }, 'in its browser in full-screen/kiosk mode. The Android app is recommended: it keeps the device key in secure hardware and locks the tablet to the player.')),
     el('div', { class: 'card' }, el('h2', {}, '2. Create a one-time code'), f),
     el('div', { class: 'card' }, el('h2', {}, '3. Assign it'), el('p', {}, 'After the tablet shows “Waiting for vehicle assignment”, assign it on the '), el('a', { href: '#/tablets' }, 'Tablets page.')),
+    verifiedOnlyCard(policy),
     el('div', { class: 'card' }, el('h2', {}, 'Recent codes (last 7 days)'),
       codes.length ? el('table', { id: 'codes' }, el('tbody', {}, ...codes.map((c) => el('tr', {},
         el('td', {}, c.label || el('span', { class: 'muted' }, 'no label')),
@@ -368,6 +371,26 @@ async function fleetAddTablet() {
         el('td', { class: 'sub' }, `created ${ago(c.created_at)}`),
         el('td', {}, c.state === 'ACTIVE' ? btn('Revoke', () => act(() => api('POST', `${base()}/devices/enrollment-codes/${c.id}/revoke`), 'Code revoked.').then(() => fleetAddTablet()), 'btn small danger') : null)))))
         : el('p', { class: 'muted' }, 'None.')));
+}
+
+/** Fleet security setting (D-059): accept only tablets whose hardware key is verified by Android + Google. */
+function verifiedOnlyCard(p: { requireHardwareAttestation: boolean; networkMode: string; unverifiedTablets: number }) {
+  const on = p.requireHardwareAttestation || p.networkMode === 'required';
+  const toggle = el('input', { type: 'checkbox', id: 'verified-only', ...(on ? { checked: '' } : {}), ...(p.networkMode === 'required' ? { disabled: '' } : {}) }) as HTMLInputElement;
+  toggle.addEventListener('change', async () => {
+    const want = toggle.checked;
+    if (want && p.unverifiedTablets > 0) {
+      const ok = await dialog('Verified tablets only', [el('p', {}, `New tablets will need the Android app and a hardware check. Your ${p.unverifiedTablets} existing unverified tablet(s) keep working; replace or re-enroll them when you can.`)], 'Turn on');
+      if (!ok) { toggle.checked = false; return; }
+    }
+    await act(() => api('PUT', `${base()}/devices/policy`, { requireHardwareAttestation: want }), want ? 'Only verified tablets can now be added.' : 'Any tablet can now be added.');
+    await fleetAddTablet();
+  });
+  return el('div', { class: 'card', id: 'policy' }, el('h2', {}, 'Security'),
+    el('label', { class: 'check' }, can('device.manage') ? toggle : null, ' Verified tablets only'),
+    el('p', { class: 'muted' }, p.networkMode === 'required' ? 'Required for every fleet on this network.'
+      : 'When on, a tablet can join only if Android’s secure chip proves its key can’t be copied and its software is unmodified. Web-browser players are refused.'),
+    p.unverifiedTablets ? el('p', { class: 'sub' }, `${p.unverifiedTablets} current tablet(s) are not hardware verified.`) : null);
 }
 
 async function fleetVehicles() {

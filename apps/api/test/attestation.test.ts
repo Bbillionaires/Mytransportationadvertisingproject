@@ -191,3 +191,43 @@ describe('enrollment with attestation', () => {
   });
 });
 
+
+describe('per-fleet "verified tablets only" (D-059)', () => {
+  let ctx: Ctx, orgId: string, otherOrg: string, admin: Awaited<ReturnType<typeof userWithRole>>, viewer: typeof admin, otherAdmin: typeof admin;
+  beforeAll(async () => {
+    ctx = await setupApp({ attestationTrust: ca.trust() });
+    orgId = await org(ctx.db, 'FLEET_OPERATOR');
+    otherOrg = await org(ctx.db, 'FLEET_OPERATOR');
+    admin = await userWithRole(ctx, orgId, 'fleet_admin');
+    viewer = await userWithRole(ctx, orgId, 'fleet_viewer');
+    otherAdmin = await userWithRole(ctx, otherOrg, 'fleet_admin');
+  });
+  afterAll(async () => { await ctx.app.close(); await ctx.db.end(); });
+
+  const api = (method: 'GET' | 'PUT' | 'POST', url: string, h: Record<string, string>, payload?: object) => ctx.app.inject({ method, url, headers: h, ...(payload ? { payload } : {}) });
+  const code = async (o = orgId, h = admin.h) => (await api('POST', `/v1/orgs/${o}/devices/enrollment-codes`, h, {})).json().code as string;
+  const enrollWeb = async (c: string) => { const t = new FakeTablet(ctx.app); return ctx.app.inject({ method: 'POST', url: '/v1/devices/enroll', payload: { code: c, serial: t.serial, publicKey: t.publicKeyB64, appVersion: '1' } }); };
+
+  it('a fleet admin turns it on; web players are then refused for that fleet only; existing tablets are counted, not cut off', async () => {
+    expect((await enrollWeb(await code())).statusCode).toBe(201);
+    expect((await api('PUT', `/v1/orgs/${orgId}/devices/policy`, viewer.h, { requireHardwareAttestation: true })).statusCode).toBe(403);
+    expect((await api('PUT', `/v1/orgs/${orgId}/devices/policy`, admin.h, { requireHardwareAttestation: true })).statusCode).toBe(200);
+    expect((await api('GET', `/v1/orgs/${orgId}/devices/policy`, viewer.h)).json()).toEqual({ requireHardwareAttestation: true, networkMode: 'optional', unverifiedTablets: 1 });
+
+    const refused = await enrollWeb(await code());
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json().error).toMatchObject({ code: 'HARDWARE_ATTESTATION_REQUIRED', message: expect.stringMatching(/This fleet only accepts/) });
+    expect((await enrollWeb(await code(otherOrg, otherAdmin.h))).statusCode).toBe(201);
+
+    const c = await code();
+    const t = new FakeTablet(ctx.app, undefined, 'p256');
+    const ch = Buffer.from((await ctx.app.inject({ method: 'POST', url: '/v1/devices/enroll/challenge', payload: { code: c } })).json().challenge, 'base64');
+    const chain = ca.attest({ challenge: ch }, { devicePublicKey: createPublicKey({ key: Buffer.from(t.publicKeyB64, 'base64'), format: 'der', type: 'spki' }) }).chain;
+    const ok = await ctx.app.inject({ method: 'POST', url: '/v1/devices/enroll', payload: { code: c, serial: t.serial, publicKey: t.publicKeyB64, appVersion: '1', attestation: { chain } } });
+    expect(ok.statusCode, ok.body).toBe(201);
+
+    expect((await api('PUT', `/v1/orgs/${orgId}/devices/policy`, otherAdmin.h, { requireHardwareAttestation: false })).statusCode).toBe(403);
+    const a = await ctx.db.query(`SELECT count(*)::int AS n FROM audit_log WHERE action = 'device.policy_changed' AND org_id = $1`, [orgId]);
+    expect(a.rows[0].n).toBe(1);
+  });
+});

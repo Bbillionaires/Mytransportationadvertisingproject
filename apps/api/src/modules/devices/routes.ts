@@ -206,6 +206,30 @@ export async function deviceRoutes(app: FastifyInstance, { db, config, attestati
     return r;
   });
 
+  /** Fleet security policy: verified tablets only (D-059). Turning it on affects new enrollments; existing tablets are listed, not cut off. */
+  app.get('/v1/orgs/:orgId/devices/policy', async (req) => {
+    const { orgId } = parse(z.object({ orgId: uuid }), req.params);
+    await fleetOrg(orgId);
+    await authorize(db, req, 'device.read', orgId);
+    const r = await db.query(
+      `SELECT o.require_hardware_attestation,
+              (SELECT count(*)::int FROM devices d WHERE d.org_id = o.id AND d.status <> 'RETIRED' AND d.attestation_status <> 'VERIFIED') AS unverified_tablets
+         FROM organizations o WHERE o.id = $1`, [orgId]);
+    return { requireHardwareAttestation: r.rows[0].require_hardware_attestation, networkMode: config.DEVICE_ATTESTATION, unverifiedTablets: r.rows[0].unverified_tablets };
+  });
+
+  app.put('/v1/orgs/:orgId/devices/policy', async (req) => {
+    const { orgId } = parse(z.object({ orgId: uuid }), req.params);
+    await fleetOrg(orgId);
+    await authorize(db, req, 'device.manage', orgId);
+    const b = parse(z.object({ requireHardwareAttestation: z.boolean() }), req.body);
+    await withTx(db, async (tx) => {
+      await tx.query('UPDATE organizations SET require_hardware_attestation = $2 WHERE id = $1', [orgId, b.requireHardwareAttestation]);
+      await audit(tx, actorOf(req), 'device.policy_changed', { type: 'organization', id: orgId, orgId }, b);
+    });
+    return { requireHardwareAttestation: b.requireHardwareAttestation };
+  });
+
   // ----- tablet side -----
   /** Step 1 for tablets that can prove a hardware key (Android shell): a fresh, single-use challenge bound to the code. */
   app.post('/v1/devices/enroll/challenge', { config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (req) => {
@@ -229,7 +253,6 @@ export async function deviceRoutes(app: FastifyInstance, { db, config, attestati
     let der: Buffer;
     try { der = parseDevicePublicKey(b.publicKey); } catch { throw badRequest('publicKey must be a base64 DER SPKI Ed25519 or ECDSA P-256 key'); }
     const mode = config.DEVICE_ATTESTATION;
-    if (mode === 'required' && !b.attestation) throw forbidden('this network only accepts tablets that prove a hardware key; install the Android shell (docs/ANDROID_SHELL.md)');
     if (b.attestation && mode !== 'off') await trust.revokedSerials(); // warm the revocation-list cache outside the transaction
     const out = await withTx(db, async (tx) => {
       const c = await tx.query(
@@ -239,6 +262,11 @@ export async function deviceRoutes(app: FastifyInstance, { db, config, attestati
       if (!code) throw unauthorized('invalid or expired enrollment code');
       const exists = await tx.query('SELECT 1 FROM devices WHERE serial = $1', [b.serial]);
       if (exists.rows[0]) throw conflict('a device with this serial is already enrolled; retire it first');
+      // Verified tablets only: network-wide (DEVICE_ATTESTATION=required) or chosen by this fleet (D-059).
+      const fleetRequires = (await tx.query('SELECT require_hardware_attestation FROM organizations WHERE id = $1', [code.org_id])).rows[0]?.require_hardware_attestation === true;
+      const required = mode === 'required' || (fleetRequires && mode !== 'off');
+      const who = mode === 'required' ? 'This network' : 'This fleet';
+      if (required && !b.attestation) throw forbidden(`${who} only accepts tablets that prove a hardware key. Install the Ride Screen Android app on this tablet.`, 'HARDWARE_ATTESTATION_REQUIRED');
 
       // Hardware attestation (R-028). The challenge is consumed with the code, so a chain can never be replayed.
       let att: { status: string; level: string | null; boot: string | null; failure: string | null } = { status: 'NONE', level: null, boot: null, failure: null };
@@ -252,8 +280,8 @@ export async function deviceRoutes(app: FastifyInstance, { db, config, attestati
           if (!(e instanceof AttestationError)) throw e;
           att = { status: 'FAILED', level: null, boot: null, failure: e.reason.slice(0, 300) };
         }
-        if (mode === 'required' && att.status !== 'VERIFIED') {
-          throw forbidden(att.status === 'FAILED' ? `hardware attestation failed: ${att.failure}` : 'this tablet\'s bootloader is unlocked or its software is not verified; it cannot join the network');
+        if (required && att.status !== 'VERIFIED') {
+          throw forbidden(att.status === 'FAILED' ? `Hardware check failed: ${att.failure}` : `This tablet's bootloader is unlocked or its software is not verified. ${who} only accepts verified tablets.`, 'HARDWARE_ATTESTATION_REQUIRED');
         }
       }
       const d = await tx.query(

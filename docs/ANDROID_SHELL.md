@@ -50,7 +50,7 @@ At enrollment the player asks the server for a single-use challenge (`POST /v1/d
 - the key was generated (not imported) in a TEE or StrongBox, by `net.ridesharemedia.shell`
 - the root of trust: verified boot and a locked bootloader
 
-The result is shown in the fleet portal: **Hardware verified**, **Unlocked or modified**, or **Hardware check failed**. `DEVICE_ATTESTATION=optional` (default) records the result and still enrolls web players and older shells. `required` refuses anything that is not hardware verified.
+The result is shown in the fleet portal: **Hardware verified**, **Unlocked or modified**, or **Hardware check failed**. `DEVICE_ATTESTATION=optional` (default) records the result and still enrolls web players and older shells. `required` refuses anything that is not hardware verified. A fleet can also choose **Verified tablets only** for itself in the portal (Add a tablet → Security); existing tablets keep working and are counted so the fleet can replace them.
 
 `attest` works only while the key has never signed a request, so a compromised page can't use it to wipe an enrolled tablet's identity. `npm run jobs:check-attestation-roots -w @rmn/api` (weekly) warns when Google publishes a root that isn't pinned yet.
 

@@ -138,6 +138,16 @@ async function main() {
     await nav(page, 'Overview'); await nav(page, 'Tablets');
     await page.waitForSelector('#tablets tr:has-text("CAB-104 rear") .chip.warn:has-text("Unlocked or modified")');
 
+    step('turn on "verified tablets only": the admin is warned about the existing unverified tablet; then turn it off again');
+    await nav(page, 'Add a tablet');
+    await page.waitForSelector('#policy:has-text("1 current tablet(s) are not hardware verified")');
+    await page.check('#verified-only');
+    await page.click('#dlg button:has-text("Turn on")');
+    await page.waitForSelector('text=Only verified tablets can now be added.');
+    assert.equal((await q(`SELECT require_hardware_attestation FROM organizations WHERE id = $1`, [fleetOrg]))[0].require_hardware_attestation, true);
+    await page.uncheck('#verified-only');
+    await page.waitForSelector('text=Any tablet can now be added.');
+
     step('overview shows the healthy fleet');
     await nav(page, 'Overview');
     await page.waitForSelector('#stat-online .n:has-text("1")');
