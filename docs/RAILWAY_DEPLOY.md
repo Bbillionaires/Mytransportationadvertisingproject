@@ -15,7 +15,7 @@
 | **verify-spend-counters** (cron) | same | `npm run jobs:verify-spend-counters` | Nightly |
 | **check-attestation-roots** (cron) | same | `npm run jobs:check-attestation-roots` | Weekly; failure = Google published a new root to pin |
 
-Cron services must exit when done; all these commands do. Turn the pre-deploy migration off for every service except **api**, so migrations run once per deploy.
+Cron services must exit when done; all these commands do. Only **api** uses the root `railway.json` (migrations before deploy, `/readyz` health check). Every other service points its **Config file** setting at `infra/railway/worker.json` (or its own copy with a cron start command), so migrations run once per deploy and job services aren't health-checked over HTTP.
 
 ## Variables (api and worker; cron services need the database and storage ones)
 | Variable | Value |
