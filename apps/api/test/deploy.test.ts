@@ -31,8 +31,12 @@ describe('first super admin bootstrap (empty production database)', () => {
     const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: DB_URL, ...keys, PAYMENTS_PROVIDER: 'disabled', APP_PUBLIC_URL: 'https://rides.example.com', LOG_LEVEL: 'silent' });
     const link = await bootstrapAdmin(db, config, 'owner@example.test', 'Owner');
     expect(link).toMatch(/^https:\/\/rides\.example\.com\/portal\/\?reset=/);
+    // Link lost or expired before use: the same email gets a fresh link; anyone else is refused.
+    await expect(bootstrapAdmin(db, config, 'intruder@example.test', 'X')).rejects.toThrow(/already exists/);
+    const again = await bootstrapAdmin(db, config, 'owner@example.test', 'Owner');
+    expect(again).not.toBe(link);
     const app = await buildApp({ config, db, logger: false });
-    const token = decodeURIComponent(link.split('reset=')[1]!);
+    const token = decodeURIComponent(again.split('reset=')[1]!);
     const rc = await app.inject({ method: 'POST', url: '/v1/auth/password-reset/confirm', payload: { token, newPassword: 'correct battery horse staple 42' } });
     expect(rc.statusCode, rc.body).toBe(200);
     const login = await app.inject({ method: 'POST', url: '/v1/auth/login', payload: { email: 'owner@example.test', password: 'correct battery horse staple 42' } });
@@ -40,7 +44,10 @@ describe('first super admin bootstrap (empty production database)', () => {
     const me = (await app.inject({ method: 'GET', url: '/v1/me', headers: { authorization: `Bearer ${login.json().token}` } })).json();
     expect(me.memberships).toEqual([expect.objectContaining({ orgKind: 'PLATFORM', role: 'super_admin' })]);
     await expect(bootstrapAdmin(db, config, 'second@example.test', 'Second')).rejects.toThrow(/already exists/);
+    // Once the admin has chosen a password, not even their own email can mint another bootstrap link.
+    await expect(bootstrapAdmin(db, config, 'owner@example.test', 'Owner')).rejects.toThrow(/already exists/);
     expect((await db.query(`SELECT action FROM audit_log WHERE action = 'platform.bootstrap_admin'`)).rowCount).toBe(1);
+    expect((await db.query(`SELECT action FROM audit_log WHERE action = 'platform.bootstrap_link_reissued'`)).rowCount).toBe(1);
     await app.close();
   });
 });

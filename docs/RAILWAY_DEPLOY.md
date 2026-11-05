@@ -1,21 +1,23 @@
 # Deploying to Railway
 
-> Status: deployment files are built and tested locally (production image, production mode, migrations, first-admin setup). **No Railway project for this app exists yet.** Creating one starts billing on the product owner's Railway account and needs their go-ahead.
+> Status (2026-11-05): **live pilot project `rideshare-media`** on the product owner's Railway account, created with their go-ahead. The API answers at `https://api-production-81031.up.railway.app` (portal at `/portal/`), deploying branch `claude/new-session-rjqusc`. Postgres and the `media` bucket (US East, `iad`) are provisioned. Email and payments are off. Next: first admin, the AWS backup bucket, then the cron services.
+>
+> Railway has deprecated `railway.json` (config as code), so it is **not applied**. Every setting below is set on the service itself (Settings tab).
 
 ## Project layout (one Railway project, e.g. `rideshare-media`)
 | Service | Source | Start command | Notes |
 |---|---|---|---|
 | **Postgres** | Railway Postgres template | — | Daily backups on; PITR when available |
 | **media** (bucket) | Railway Bucket | — | Region closest to the first city; see docs/MEDIA_STORAGE.md |
-| **api** | this repo (`railway.json`, image `infra/app/Dockerfile`) | default (`node --import tsx src/server.ts`) | Public domain; runs migrations before each deploy; health check `/readyz` |
-| **worker** | same repo/image | `npm run jobs:worker` | Always on: media processing, backups, webhooks, email, validation |
+| **api** | this repo, Dockerfile `infra/app/Dockerfile` | default (`node --import tsx src/server.ts`) | Public domain (port 8080); **pre-deploy command** `npm run db:migrate`; health check `/readyz`; `HOST=::` |
+| **worker** | same repo/image | `npm run jobs:worker` | Always on (restart: always); no pre-deploy command, no health check |
 | **allocate-windows** (cron) | same | `npm run jobs:allocate-windows` | Hourly (`5 * * * *`); alert on failure |
 | **allocate-commissions** (cron) | same | `npm run jobs:allocate-commissions` | Daily |
 | **verify-media** (cron) | same | `npm run jobs:verify-media` | Nightly; add a monthly `-- --deep` |
 | **verify-spend-counters** (cron) | same | `npm run jobs:verify-spend-counters` | Nightly |
 | **check-attestation-roots** (cron) | same | `npm run jobs:check-attestation-roots` | Weekly; failure = Google published a new root to pin |
 
-Cron services must exit when done; all these commands do. Only **api** uses the root `railway.json` (migrations before deploy, `/readyz` health check). Every other service points its **Config file** setting at `infra/railway/worker.json` (or its own copy with a cron start command), so migrations run once per deploy and job services aren't health-checked over HTTP.
+Cron services must exit when done; all these commands do. Set the **pre-deploy command** (`npm run db:migrate`) and the `/readyz` health check on **api** only, so migrations run once per deploy and job services aren't health-checked over HTTP.
 
 ## Variables (api and worker; cron services need the database and storage ones)
 | Variable | Value |

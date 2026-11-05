@@ -9,8 +9,18 @@ import { issueUserToken } from '../identity/accounts.js';
 export async function bootstrapAdmin(db: Db, config: Config, email: string, name: string): Promise<string> {
   return withTx(db, async (tx) => {
     await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['bootstrap-admin']);
-    const existing = await tx.query(`SELECT 1 FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.role_code = 'super_admin' AND m.status = 'ACTIVE' AND u.status = 'ACTIVE'`);
-    if (existing.rows[0]) throw new Error('a super admin already exists; invite further staff from the portal (Team) instead');
+    const existing = await tx.query(
+      `SELECT u.id, u.email, u.password_changed_at FROM memberships m JOIN users u ON u.id = m.user_id
+        WHERE m.role_code = 'super_admin' AND m.status = 'ACTIVE' AND u.status = 'ACTIVE'`);
+    if (existing.rows[0]) {
+      // The first admin's link expired before they used it (no email provider to send a reset yet): re-issue it, but
+      // only for that same email and only while no super admin has ever chosen a password.
+      const unclaimed = existing.rows.every((r) => r.password_changed_at === null);
+      const same = existing.rows.find((r) => String(r.email).toLowerCase() === email.toLowerCase());
+      if (!unclaimed || !same) throw new Error('a super admin already exists; invite further staff from the portal (Team) instead');
+      await audit(tx, { requestId: 'bootstrap' }, 'platform.bootstrap_link_reissued', { type: 'user', id: same.id }, { email });
+      return issueUserToken(tx, config, same.id, same.email, 'PASSWORD_RESET');
+    }
     let org = (await tx.query(`SELECT id FROM organizations WHERE kind = 'PLATFORM' ORDER BY created_at LIMIT 1`)).rows[0];
     org ??= (await tx.query(`INSERT INTO organizations (kind, name) VALUES ('PLATFORM', 'Platform') RETURNING id`)).rows[0];
     if ((await tx.query('SELECT 1 FROM users WHERE email = $1', [email])).rows[0]) throw new Error(`a user with ${email} already exists`);

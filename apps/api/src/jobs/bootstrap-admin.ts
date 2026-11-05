@@ -1,7 +1,8 @@
 /**
  * First-time production setup: creates the platform organization and the FIRST super admin, then prints a
  * single-use, 30-minute link to choose a password (also emailed when an email provider is configured).
- * Refuses to run once any active super admin exists — later staff are invited from the portal (Team).
+ * Refuses to run once any active super admin exists (later staff are invited from the portal, Team), except to
+ * re-issue the link for that same email while no super admin has chosen a password yet (link expired unused).
  *   npm run jobs:bootstrap-admin -w @rmn/api -- --email you@company.com --name "Your Name"
  * After choosing the password, enable two-step verification under Security: staff actions require it.
  */
