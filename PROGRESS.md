@@ -416,7 +416,7 @@ Finding: there is **no Railway project for this app yet**. Creating it (Postgres
 AWS: the product owner is locked out of the new AWS account (MFA entry deleted) and is waiting on AWS support; the backup bucket waits on that.
 
 ### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
-1. **Product owner:** approve creating the Railway project; regain AWS access (support), then create the backup bucket (docs/MEDIA_STORAGE.md).
+1. **Product owner:** regain AWS access (support chat), then create the backup bucket (docs/MEDIA_STORAGE.md). Railway project is live (session 26).
 2. Email provider (D-044) before inviting real users.
 3. Android field test on one tablet with the chosen EMM (D-017).
 4. External penetration test (R-015) before the pilot.
@@ -434,3 +434,18 @@ AWS: the product owner is locked out of the new AWS account (MFA entry deleted) 
 | Weekly `jobs:check-attestation-roots` (new Google root / revocation list reachable) | ✅ | run live: both roots pinned, 1,769 revoked keys listed |
 
 Not verified here: attestation on a physical tablet (the emulator and real devices are needed). Production should move to `DEVICE_ATTESTATION=required` once every tablet runs the shell (D-059).
+
+## 2026-11-05 — Session 26: first Railway deployment (pilot) and per-fleet verified tablets
+
+| Item | Status | Evidence |
+|---|---|---|
+| Railway project `rideshare-media` (created with the product owner's go-ahead): Postgres, `media` bucket (US East), **api** with public domain, **worker** | ✅ live | `https://api-production-81031.up.railway.app/readyz` → ok; portal served; wrong password refused; `/metrics` locked; HSTS + frame protections |
+| Per-fleet "verified tablets only" setting (portal: Add a tablet → Security), audited; existing tablets counted, not cut off | ✅ | `attestation.test.ts`; fleet portal e2e |
+| First admin link can be re-issued (same email, only while no super admin has chosen a password) | ✅ | `deploy.test.ts` |
+
+Bugs found by the first real deploy and fixed:
+- Railway's builder rejects BuildKit secret mounts: the optional proxy CA is now a build argument.
+- Railway no longer applies `railway.json`, so migrations didn't run. The pre-deploy command and health check are now set on the api service (documented).
+- **Security:** the database pool switched to the restricted role in the background. When that failed it crashed the process, and a connection could have been used as the privileged login role. Now a connection is never handed out until the role switch succeeds (fail closed); covered by `rls.test.ts`.
+
+Still to do on Railway: first admin (needs the owner's email and them at a device for the 30-minute link), cron services, AWS backup bucket, email domain.
