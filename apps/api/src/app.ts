@@ -29,6 +29,7 @@ import { engagementRoutes } from './modules/riders/engagement.js';
 import type { PaymentProvider } from './modules/payments/provider.js';
 import { StripeProvider } from './modules/payments/stripe.js';
 import { FakePaymentProvider } from './modules/payments/fake.js';
+import { DisabledPaymentProvider } from './modules/payments/disabled.js';
 import { devCheckoutRoutes } from './modules/payments/devCheckout.js';
 import { platformRoutes } from './modules/platform/routes.js';
 import { mediaOrigins } from './lib/objectStore.js';
@@ -48,7 +49,7 @@ const FINANCE_RULE_ERRORS = new Set(['MoneyError', 'AllocationError', 'RuleError
 
 export async function buildApp(opts: { config: Config; db: Db; logger?: boolean | object; paymentProvider?: PaymentProvider }): Promise<FastifyInstance> {
   const { config, db } = opts;
-  const provider = opts.paymentProvider ?? (config.PAYMENTS_PROVIDER === 'stripe' ? new StripeProvider(config.STRIPE_SECRET_KEY!) : new FakePaymentProvider(`${config.APP_PUBLIC_URL}/dev/checkout`));
+  const provider = opts.paymentProvider ?? (config.PAYMENTS_PROVIDER === 'stripe' ? new StripeProvider(config.STRIPE_SECRET_KEY!) : config.PAYMENTS_PROVIDER === 'disabled' ? new DisabledPaymentProvider() : new FakePaymentProvider(`${config.APP_PUBLIC_URL}/dev/checkout`));
   const app = Fastify({
     logger: opts.logger ?? { level: config.LOG_LEVEL, redact: ['req.headers.authorization', 'req.headers["x-device-signature"]'] },
     bodyLimit: 1024 * 1024,

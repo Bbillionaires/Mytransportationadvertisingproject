@@ -6,3 +6,6 @@ apps/android
 **/*.log
 .env
 .env.*
+apps/*/e2e
+**/test
+infra/media-worker/upload-fixture.mts

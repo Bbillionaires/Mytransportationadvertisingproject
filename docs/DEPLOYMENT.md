@@ -27,6 +27,8 @@ npm run test:finance     # pure calculation tests only (no database needed)
 ```
 API tests **drop and recreate the `public` schema** of `TEST_DATABASE_URL` (default `postgres://rmn:rmn@localhost:5432/rmn_test`). Never point it at a database you care about.
 
+Railway-specific steps (services, variables, first admin): see `docs/RAILWAY_DEPLOY.md`.
+
 ## Production checklist (not yet executed; nothing has been deployed)
 1. **Database roles (R-002, R-003).** Migration `0016_row_level_security.sql` creates `rmn_app` (NOLOGIN, not a superuser, no BYPASSRLS), grants it DML and nothing else, revokes DELETE on `journal_entries`, `journal_lines` and `audit_log`, and installs the row-level-security policies. The API and every job switch each connection to it with `SET ROLE rmn_app` (`DB_RUNTIME_ROLE`, default `rmn_app`). It never owns tables, so it cannot disable triggers or bypass RLS.
    - Production: migrations run as an owner role (e.g. `rmn_owner`, a release job). The API logs in as a role that is a *member* of `rmn_app` and is not a superuser, or logs in as `rmn_app` directly (give it LOGIN and set `DB_RUNTIME_ROLE=''`).

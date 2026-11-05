@@ -49,7 +49,7 @@ export async function devCheckoutRoutes(app: FastifyInstance, { config, fake }: 
     for (const e of events) {
       const body = JSON.stringify(e);
       const r = await app.inject({ method: 'POST', url: '/v1/webhooks/stripe', payload: body,
-        headers: { 'content-type': 'application/json', 'stripe-signature': stripeSignatureHeader(body, config.STRIPE_WEBHOOK_SECRET) } });
+        headers: { 'content-type': 'application/json', 'stripe-signature': stripeSignatureHeader(body, config.STRIPE_WEBHOOK_SECRET!) } });
       if (r.statusCode >= 300) req.log.error({ status: r.statusCode, body: r.body }, 'simulated webhook rejected');
     }
     return reply.redirect(s.successUrl, 303);

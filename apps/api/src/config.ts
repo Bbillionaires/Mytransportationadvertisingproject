@@ -44,9 +44,10 @@ const schema = z.object({
   /** Opt-in only: let the AI pre-screen auto-approve. Disabled by default; a human decides every case (D-034). */
   MODERATION_AUTO_APPROVE: z.enum(['false']).default('false'),
   /** 'fake' = in-process Stripe stand-in (dev/demo/tests); 'stripe' = Stripe API with a TEST key. */
-  PAYMENTS_PROVIDER: z.enum(['fake', 'stripe']).default('fake'),
+  PAYMENTS_PROVIDER: z.enum(['fake', 'stripe', 'disabled']).default('fake'),
   STRIPE_SECRET_KEY: z.string().regex(/^sk_test_[A-Za-z0-9]+$/, 'only Stripe test keys (sk_test_…) are accepted').optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().regex(/^whsec_[A-Za-z0-9]+$/, 'STRIPE_WEBHOOK_SECRET must look like whsec_…'),
+  /** Required unless PAYMENTS_PROVIDER=disabled. */
+  STRIPE_WEBHOOK_SECRET: z.string().regex(/^whsec_[A-Za-z0-9]+$/, 'STRIPE_WEBHOOK_SECRET must look like whsec_…').optional(),
   /** Stripe Price for the $30/month driver participation subscription. */
   STRIPE_DRIVER_PRICE_ID: z.string().default('price_driver_participation_test'),
   APP_PUBLIC_URL: z.string().url().default('http://127.0.0.1:8080'),
@@ -67,9 +68,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (!parsed.success) {
     throw new Error('Invalid configuration: ' + parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '));
   }
-  if (parsed.data.NODE_ENV === 'production' && /localhost|127\.0\.0\.1/.test(parsed.data.DATABASE_URL) === false && !/sslmode=require|sslmode=verify/.test(parsed.data.DATABASE_URL)) {
+  // Remote databases need TLS in production — except Railway's private network (*.railway.internal), which is an
+  // encrypted WireGuard mesh reachable only from the project's own services.
+  const dbHost = (() => { try { return new URL(parsed.data.DATABASE_URL).hostname; } catch { return ''; } })();
+  if (parsed.data.NODE_ENV === 'production' && !/^(localhost|127\.0\.0\.1)$/.test(dbHost) && !dbHost.endsWith('.railway.internal') && !/sslmode=require|sslmode=verify/.test(parsed.data.DATABASE_URL)) {
     throw new Error('Production DATABASE_URL must require TLS (sslmode=require or verify-full)');
   }
+  if (parsed.data.PAYMENTS_PROVIDER !== 'disabled' && !parsed.data.STRIPE_WEBHOOK_SECRET) throw new Error('STRIPE_WEBHOOK_SECRET is required unless PAYMENTS_PROVIDER=disabled');
   if (parsed.data.PAYMENTS_PROVIDER === 'stripe' && !parsed.data.STRIPE_SECRET_KEY) throw new Error('PAYMENTS_PROVIDER=stripe requires STRIPE_SECRET_KEY (test mode)');
   if (parsed.data.NODE_ENV === 'production' && parsed.data.PAYMENTS_PROVIDER === 'fake') throw new Error('the fake payment provider cannot run in production');
   if (parsed.data.MEDIA_STORE === 's3' && !(parsed.data.MEDIA_S3_BUCKET && parsed.data.MEDIA_S3_ACCESS_KEY_ID && parsed.data.MEDIA_S3_SECRET_ACCESS_KEY)) throw new Error('MEDIA_STORE=s3 requires MEDIA_S3_BUCKET, MEDIA_S3_ACCESS_KEY_ID and MEDIA_S3_SECRET_ACCESS_KEY');

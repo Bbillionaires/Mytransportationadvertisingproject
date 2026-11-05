@@ -29,6 +29,7 @@ export async function issueUserToken(tx: Tx, config: Config, userId: string, ema
     await enqueueEmail(tx, email, 'password_reset', 'Reset your Rideshare Media Network password',
       `Use this link within 30 minutes to choose a new password:\n${link(config, 'reset', token)}\n\nIf you did not ask for this, ignore this email; your password is unchanged.`);
   }
+  return link(config, purpose === 'EMAIL_VERIFY' ? 'verify' : 'reset', token);
 }
 
 /** Self-registration responds identically whether or not the email exists (no account enumeration). */

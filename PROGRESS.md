@@ -400,8 +400,24 @@ Bugs found and fixed: a background download from an older playlist could re-add 
 
 Not verified here: real Railway and AWS buckets (needs the product owner's accounts), and the IAM deny rules (moto does not enforce IAM). Run `jobs:check-media-storage` after setup.
 
+## 2026-11-05 — Session 24: ready to deploy on Railway
+
+| Item | Status | Evidence |
+|---|---|---|
+| Production image (`infra/app/Dockerfile`): API + portal + player + rider app + ffmpeg, non-root; `railway.json` (migrations before deploy, `/readyz` health check) | ✅ | built and run in production mode: migrations, health, all apps served |
+| `PAYMENTS_PROVIDER=disabled`: checkout returns "Payments are not enabled yet", webhooks refused, nothing reaches a processor | ✅ | `deploy.test.ts` |
+| Railway private-network database accepted without `sslmode`; other remote databases still need TLS | ✅ | `deploy.test.ts` |
+| First super admin bootstrap (`jobs:bootstrap-admin`): single-use password link, refuses once an admin exists, audited | ✅ | `deploy.test.ts` (empty database) + container smoke test |
+| Always-on production worker (`jobs:worker`): media, backups, webhooks, email, validation | ✅ | started in the container |
+| Deployment guide: services, variables, crons, first deploy | ✅ | `docs/RAILWAY_DEPLOY.md` |
+
+Finding: there is **no Railway project for this app yet**. Creating it (Postgres, bucket, api, worker, crons) needs the product owner's go-ahead because it starts billing.
+
+AWS: the product owner is locked out of the new AWS account (MFA entry deleted) and is waiting on AWS support; the backup bucket waits on that.
+
 ### Next steps (in order; reprioritized by the product owner: payouts and Stripe go last)
-1. **Product owner:** create the AWS backup bucket and backup user, and the Railway bucket (docs/MEDIA_STORAGE.md), then run `jobs:check-media-storage`.
-2. Android field test on one tablet with the chosen EMM (D-017); key attestation at enrollment (R-028).
-3. External penetration test (R-015) before the pilot.
-4. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).
+1. **Product owner:** approve creating the Railway project; regain AWS access (support), then create the backup bucket (docs/MEDIA_STORAGE.md).
+2. Email provider (D-044) before inviting real users.
+3. Android field test on one tablet with the chosen EMM (D-017); key attestation at enrollment (R-028).
+4. External penetration test (R-015) before the pilot.
+5. **Last:** Stripe test-mode round-trip with real keys (R-025), then M4.3 payouts (D-026).

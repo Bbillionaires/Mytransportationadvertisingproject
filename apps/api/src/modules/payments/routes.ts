@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { HttpError } from '../../lib/errors.js';
 import type { Config } from '../../config.js';
 import type { Db } from '../../db/pool.js';
 import { withTx } from '../../db/pool.js';
@@ -31,6 +32,7 @@ export async function paymentRoutes(app: FastifyInstance, { db, config, provider
   /** Signed, idempotent intake. Always stored first; processed immediately and retried by jobs:process-webhooks on failure. */
   app.post('/v1/webhooks/stripe', { config: { rateLimit: { max: 600, timeWindow: '1 minute' } } }, async (req, reply) => {
     const raw = req.rawBody ?? '';
+    if (provider.name === 'disabled' || !config.STRIPE_WEBHOOK_SECRET) throw new HttpError(503, 'PAYMENTS_NOT_ENABLED', 'payments are not enabled');
     if (!verifyStripeSignature(raw, req.headers['stripe-signature'] as string | undefined, config.STRIPE_WEBHOOK_SECRET)) throw badRequest('invalid webhook signature');
     const e = req.body as any;
     if (!e?.id || !e?.type || !e?.data?.object) throw badRequest('malformed event');
