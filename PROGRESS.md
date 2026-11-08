@@ -460,3 +460,11 @@ Still to do on Railway: first admin (needs the owner's email and them at a devic
 - `BOOTSTRAP_ADMIN_EMAIL` on the worker creates the first super admin and logs the single-use link (re-issued on restart until a password is chosen). `deploy.test.ts`.
 - Railway cron services: allocate-windows (hourly), allocate-commissions (daily), verify-spend-counters (nightly), check-attestation-roots (weekly). Each ran locally in production mode against an empty database and exited 0. The nightly media audit runs inside the worker (only it holds the backup keys).
 - Fixed a weekday-dependent test (10 business days from a Sunday is 12 calendar days).
+
+## 2026-11-08 — Session 27: key rotation (R-016)
+| Item | Status | Evidence |
+|---|---|---|
+| Versioned encryption (key id in each value), keyring with `APP_ENCRYPTION_KEY_PREVIOUS`, legacy values still readable | ✅ | `keyrotation.test.ts` |
+| Re-encryption job (`jobs:rotate-encryption-key [--check]`), also run automatically by the worker while a previous key is set; audited; refuses to report done if anything is unreadable | ✅ | same: two-step sign-in works on the old key, during the switch, after re-encryption and after removing the old key |
+| Super-admin key generator in the portal (made in the browser, never sent to the server) | ✅ | staff portal e2e: 32-byte keys, no network request, hidden from other staff |
+| Rotation guide for every secret | ✅ | `docs/KEY_ROTATION.md` |

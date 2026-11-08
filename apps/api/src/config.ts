@@ -7,6 +7,11 @@ const schema = z.object({
   DATABASE_URL: z.string().url(),
   /** 32-byte key, base64. Encrypts MFA secrets at rest. Load from a secret manager in production. */
   APP_ENCRYPTION_KEY: z.string().refine((v) => Buffer.from(v, 'base64').length === 32, 'APP_ENCRYPTION_KEY must be 32 bytes base64'),
+  /**
+   * Key rotation (R-016, docs/KEY_ROTATION.md): the previous key(s), comma-separated, kept only until
+   * jobs:rotate-encryption-key reports nothing left on them. Used to decrypt, never to encrypt.
+   */
+  APP_ENCRYPTION_KEY_PREVIOUS: z.string().optional().refine((v) => !v || v.split(',').every((k) => Buffer.from(k.trim(), 'base64').length === 32), 'each APP_ENCRYPTION_KEY_PREVIOUS entry must be 32 bytes base64'),
   SESSION_TTL_MINUTES: z.coerce.number().int().positive().default(480),
   DEVICE_CLOCK_SKEW_SECONDS: z.coerce.number().int().positive().default(300),
   LOG_LEVEL: z.string().default('info'),
@@ -72,6 +77,10 @@ const schema = z.object({
   /** Live money movement is hard-disabled until explicitly approved (see DECISIONS.md D-010). */
   LIVE_PAYMENTS_ENABLED: z.enum(['false']).default('false'),
 });
+
+/** Current key first, then previous keys: what decrypt() may use. */
+export const encryptionKeys = (c: { APP_ENCRYPTION_KEY: string; APP_ENCRYPTION_KEY_PREVIOUS?: string }): string[] =>
+  [c.APP_ENCRYPTION_KEY, ...(c.APP_ENCRYPTION_KEY_PREVIOUS ?? '').split(',').map((k) => k.trim()).filter(Boolean)];
 
 export type Config = z.infer<typeof schema>;
 

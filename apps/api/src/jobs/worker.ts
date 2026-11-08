@@ -13,6 +13,7 @@ import { runBackups } from '../modules/media/backup.js';
 import { processPendingUploads } from '../modules/media/process.js';
 import { processPendingWebhooks } from '../modules/payments/webhooks.js';
 import { bootstrapFromEnv } from '../modules/platform/bootstrap.js';
+import { rotateEncryptedValues } from '../modules/platform/rotateKeys.js';
 import { verifyMedia } from '../modules/media/backup.js';
 
 const config = loadConfig();
@@ -41,6 +42,17 @@ const jobs: Array<{ name: string; everyMs: number; run: () => Promise<unknown>; 
 const boot = await bootstrapFromEnv(db, config, process.env);
 if (boot.status === 'link') log({ msg: 'FIRST ADMIN: open this single-use link within 30 minutes to choose your password, then remove BOOTSTRAP_ADMIN_EMAIL', link: boot.link });
 else if (boot.status === 'refused') log({ msg: 'first-admin setup skipped', reason: boot.reason });
+
+// Key rotation without a terminal (docs/KEY_ROTATION.md): while APP_ENCRYPTION_KEY_PREVIOUS is set, move every stored
+// secret to the current key on start, and say when the previous key can be removed.
+if (config.APP_ENCRYPTION_KEY_PREVIOUS) {
+  try {
+    const r = await rotateEncryptedValues(db, config);
+    const done = r.remaining === 0 && r.unreadable === 0;
+    log({ msg: done ? 'KEY ROTATION complete: every secret uses the current key; you can now delete APP_ENCRYPTION_KEY_PREVIOUS'
+      : 'KEY ROTATION incomplete: keep APP_ENCRYPTION_KEY_PREVIOUS', level: done ? 'info' : 'error', result: r });
+  } catch (e) { log({ msg: 'KEY ROTATION failed: keep APP_ENCRYPTION_KEY_PREVIOUS', level: 'error', error: (e as Error).message }); }
+}
 
 log({ msg: 'worker started', jobs: jobs.map((j) => `${j.name}/${j.everyMs / 1000}s`) });
 while (!stopping) {

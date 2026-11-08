@@ -169,6 +169,7 @@ async function main() {
     await mod.fill('#dlg input[name=code]', totpAt(modSecret, Math.floor(Date.now() / 30_000)));
     await mod.click('#dlg button:has-text("Turn on")');
     await mod.waitForSelector('#mfa-card:has-text("On.")');
+    assert.equal(await mod.locator('#keygen').count(), 0, 'only the super admin sees the key generator');
     await nav(mod, 'Overview');
     await mod.waitForSelector('#stat-ads .n:has-text("1")');
     await mod.waitForSelector('#stat-videos .n:has-text("2")');
@@ -230,6 +231,18 @@ async function main() {
     const sa = await open('super-admin');
     await signIn(sa, superAdmin, true);
     await sa.waitForSelector('#stat-creators .n:has-text("1")');
+    // Key rotation helper: a fresh 32-byte key made in the browser, with no request to the server.
+    await nav(sa, 'Security');
+    const keyRequests: string[] = [];
+    sa.on('request', (r) => { if (!r.url().includes('/portal/')) keyRequests.push(r.url()); });
+    await sa.click('#keygen button:has-text("Generate a new key")');
+    const key1 = (await sa.textContent('#new-key'))!.trim();
+    await sa.click('#keygen button:has-text("Generate a new key")');
+    const key2 = (await sa.textContent('#new-key'))!.trim();
+    assert.equal(Buffer.from(key1, 'base64').length, 32);
+    assert.notEqual(key1, key2);
+    assert.deepEqual(keyRequests, [], 'generating a key sends nothing to the server');
+    sa.removeAllListeners('request');
     await nav(sa, 'Earnings eligibility');
     await sa.click('#elig-creators tr[data-name="City Walks"] button:has-text("Change")');
     await sa.selectOption('#dlg select[name=status]', 'ELIGIBLE');

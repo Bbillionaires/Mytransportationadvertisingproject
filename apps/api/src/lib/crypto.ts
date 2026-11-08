@@ -24,21 +24,48 @@ export const DUMMY_PASSWORD_HASH = 'scrypt$32768$8$1$AAAAAAAAAAAAAAAAAAAAAA==$AA
 export const randomToken = (bytes = 32) => randomBytes(bytes).toString('base64url');
 export const sha256hex = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
 
-// ---------- AES-256-GCM for secrets at rest ----------
+// ---------- AES-256-GCM for secrets at rest (key rotation: R-016) ----------
+/** Short, non-secret identifier of a key, stored with each ciphertext so the right key is picked during rotation. */
+export const keyId = (keyB64: string) => createHash('sha256').update(Buffer.from(keyB64, 'base64')).digest('hex').slice(0, 8);
+
+/** Encrypts with the current key. Format v2.<keyId>.<iv>.<tag>.<ciphertext> (base64 parts). */
 export function encrypt(plaintext: string, keyB64: string): string {
   const key = Buffer.from(keyB64, 'base64');
   const iv = randomBytes(12);
   const c = createCipheriv('aes-256-gcm', key, iv);
   const ct = Buffer.concat([c.update(plaintext, 'utf8'), c.final()]);
-  return ['v1', iv.toString('base64'), c.getAuthTag().toString('base64'), ct.toString('base64')].join('.');
+  return ['v2', keyId(keyB64), iv.toString('base64'), c.getAuthTag().toString('base64'), ct.toString('base64')].join('.');
 }
-export function decrypt(blob: string, keyB64: string): string {
-  const [v, iv, tag, ct] = blob.split('.');
-  if (v !== 'v1' || !iv || !tag || !ct) throw new Error('bad ciphertext');
+
+const gcmOpen = (keyB64: string, iv: string, tag: string, ct: string) => {
   const d = createDecipheriv('aes-256-gcm', Buffer.from(keyB64, 'base64'), Buffer.from(iv, 'base64'));
   d.setAuthTag(Buffer.from(tag, 'base64'));
   return Buffer.concat([d.update(Buffer.from(ct, 'base64')), d.final()]).toString('utf8');
+};
+
+/**
+ * Decrypts with whichever key in the keyring (current first, then previous keys) made the ciphertext. v2 blobs name
+ * their key; legacy v1 blobs (no key id) are tried against each key, and the GCM tag rejects the wrong ones.
+ */
+export function decrypt(blob: string, keys: string | readonly string[]): string {
+  const ring = typeof keys === 'string' ? [keys] : keys;
+  const parts = blob.split('.');
+  if (parts[0] === 'v2' && parts.length === 5) {
+    const [, kid, iv, tag, ct] = parts as [string, string, string, string, string];
+    const key = ring.find((k) => keyId(k) === kid);
+    if (!key) throw new Error(`no encryption key with id ${kid} is configured (was APP_ENCRYPTION_KEY_PREVIOUS removed too early?)`);
+    return gcmOpen(key, iv, tag, ct);
+  }
+  if (parts[0] === 'v1' && parts.length === 4) {
+    const [, iv, tag, ct] = parts as [string, string, string, string];
+    for (const k of ring) { try { return gcmOpen(k, iv, tag, ct); } catch { /* try the next key */ } }
+    throw new Error('no configured encryption key opens this value');
+  }
+  throw new Error('bad ciphertext');
 }
+
+/** True when the value is already encrypted under exactly this key (rotation progress). */
+export const encryptedWith = (blob: string, keyB64: string) => blob.startsWith(`v2.${keyId(keyB64)}.`);
 
 // ---------- TOTP (RFC 6238, SHA-1, 30 s, 6 digits) ----------
 const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';

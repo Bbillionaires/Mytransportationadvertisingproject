@@ -487,7 +487,27 @@ async function security() {
       } catch (e) { toast(errText(e), true); }
     }, 'btn primary'));
   }
-  render(el('h1', {}, 'Security'), el('div', { class: 'card' }, el('h2', {}, 'Account'), el('p', {}, `${u.displayName} · ${u.email}`)), card);
+  const isSuperAdmin = me!.memberships.some((m) => m.orgKind === 'PLATFORM' && m.role === 'super_admin');
+  render(el('h1', {}, 'Security'), el('div', { class: 'card' }, el('h2', {}, 'Account'), el('p', {}, `${u.displayName} · ${u.email}`)), card,
+    isSuperAdmin ? keyGeneratorCard() : null);
+}
+
+/**
+ * Key rotation helper for the platform owner (docs/KEY_ROTATION.md): makes a new random 32-byte key IN THIS BROWSER
+ * (crypto.getRandomValues). It is never sent to the server; the owner copies it straight into Railway's variables.
+ */
+function keyGeneratorCard() {
+  const out = el('div', { class: 'code', id: 'new-key' }, '');
+  out.hidden = true;
+  const copy = btn('Copy', async () => { try { await navigator.clipboard.writeText(out.textContent ?? ''); toast('Copied. Paste it into Railway, then clear your clipboard.'); } catch { toast('Copy failed; select the text instead.', true); } }, 'btn small');
+  copy.hidden = true;
+  return el('div', { class: 'card', id: 'keygen' }, el('h2', {}, 'Generate an encryption key'),
+    el('p', { class: 'muted' }, 'For rotating APP_ENCRYPTION_KEY or MEDIA_SIGNING_KEY. The key is made on this device and is never sent anywhere. Paste it straight into Railway (Variables) and don’t share it in chat or email. Follow the steps in docs/KEY_ROTATION.md.'),
+    btn('Generate a new key', () => {
+      const b = crypto.getRandomValues(new Uint8Array(32));
+      out.textContent = btoa(String.fromCharCode(...b));
+      out.hidden = false; copy.hidden = false;
+    }, 'btn'), out, copy);
 }
 
 // ------------------------------------------------------------------ start

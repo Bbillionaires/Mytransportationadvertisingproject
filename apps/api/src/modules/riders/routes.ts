@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { Config } from '../../config.js';
+import { encryptionKeys, type Config } from '../../config.js';
 import type { Db, Queryable, Tx } from '../../db/pool.js';
 import { withTx } from '../../db/pool.js';
 import { audit } from '../../lib/audit.js';
@@ -215,7 +215,7 @@ export async function riderRoutes(app: FastifyInstance, { db, config }: { db: Db
       if (!p.session_token_enc) return { status: 'PAIRED', alreadyDelivered: true };
       await tx.query(`UPDATE rider_pairings SET session_token_enc = NULL, delivered_at = now() WHERE id = $1`, [id]);
       const exp = (await tx.query('SELECT expires_at FROM rider_tokens WHERE id = $1', [p.session_token_id])).rows[0].expires_at;
-      return { status: 'PAIRED', riderDisplayName: p.display_name, riderSession: decrypt(p.session_token_enc, config.APP_ENCRYPTION_KEY), expiresAt: exp };
+      return { status: 'PAIRED', riderDisplayName: p.display_name, riderSession: decrypt(p.session_token_enc, encryptionKeys(config)), expiresAt: exp };
     });
   });
 

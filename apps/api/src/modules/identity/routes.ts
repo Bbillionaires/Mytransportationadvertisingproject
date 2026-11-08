@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { Config } from '../../config.js';
+import { encryptionKeys, type Config } from '../../config.js';
 import type { Db } from '../../db/pool.js';
 import { audit } from '../../lib/audit.js';
 import { decrypt, DUMMY_PASSWORD_HASH, encrypt, newTotpSecret, randomToken, sha256hex, verifyPassword, verifyTotp } from '../../lib/crypto.js';
@@ -67,7 +67,7 @@ export async function identityRoutes(app: FastifyInstance, { db, config }: { db:
   const checkCode = async (userId: string, code: string): Promise<boolean> => {
     const u = await db.query('SELECT mfa_secret_enc, mfa_last_step FROM users WHERE id = $1', [userId]);
     if (!u.rows[0]?.mfa_secret_enc) return false;
-    const step = verifyTotp(decrypt(u.rows[0].mfa_secret_enc, config.APP_ENCRYPTION_KEY), code);
+    const step = verifyTotp(decrypt(u.rows[0].mfa_secret_enc, encryptionKeys(config)), code);
     if (step === null) return false;
     // Atomic replay protection: a code's time-step can be used only once.
     const upd = await db.query('UPDATE users SET mfa_last_step = $2 WHERE id = $1 AND (mfa_last_step IS NULL OR mfa_last_step < $2) RETURNING id', [userId, step]);

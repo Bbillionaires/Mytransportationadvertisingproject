@@ -25,7 +25,8 @@
     "jobs:bootstrap-admin": "tsx src/jobs/bootstrap-admin.ts",
     "jobs:worker": "tsx src/jobs/worker.ts",
     "jobs:media-worker": "tsx src/jobs/media-worker.ts",
-    "jobs:check-attestation-roots": "tsx src/jobs/check-attestation-roots.ts"
+    "jobs:check-attestation-roots": "tsx src/jobs/check-attestation-roots.ts",
+    "jobs:rotate-encryption-key": "tsx src/jobs/rotate-encryption-key.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1161.0",
