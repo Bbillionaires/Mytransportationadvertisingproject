@@ -180,7 +180,11 @@ describe('processing and fail-closed moderation', () => {
     expect((await api('POST', `/v1/takedowns/${noticeId}/resolve`, mod1.h, { action: 'RESTORE', note: 'too early to restore' })).statusCode).toBe(409);
     const cn = await api('POST', `/v1/orgs/${creator.orgId}/videos/${videoId}/counter-notice`, creator.h, { takedownId: noticeId, statement: 'I filmed these murals myself in a public place.', signature: '/s/ Walker', goodFaithBeliefOfMistake: true, consentToJurisdiction: true });
     expect(cn.json().status).toBe('COUNTER_NOTICED');
-    expect(new Date(cn.json().restore_eligible_at).getTime()).toBeGreaterThan(Date.now() + 13 * 24 * 3600_000);
+    // 10 business days: 12–14 calendar days depending on the weekday it was filed, never on a weekend.
+    const eligibleAt = new Date(cn.json().restore_eligible_at);
+    expect(eligibleAt.getTime()).toBeGreaterThan(Date.now() + 12 * 24 * 3600_000 - 60_000);
+    expect(Math.abs(eligibleAt.getTime() - addBusinessDays(new Date(), 10).getTime())).toBeLessThan(60_000);
+    expect([0, 6]).not.toContain(eligibleAt.getUTCDay());
     expect((await api('POST', `/v1/takedowns/${noticeId}/resolve`, mod1.h, { action: 'RESTORE', note: 'waiting period not over' })).statusCode).toBe(409);
     await ctx.db.query(`UPDATE takedown_notices SET restore_eligible_at = now() - interval '1 minute' WHERE id = $1`, [noticeId]);
     expect((await api('POST', `/v1/takedowns/${noticeId}/resolve`, mod1.h, { action: 'RESTORE', note: 'No court action reported within the waiting period' })).json().status).toBe('RESTORED');
