@@ -13,7 +13,7 @@
 | **worker** | same repo/image | `npm run jobs:worker` | Always on (restart: always); no pre-deploy command, no health check |
 | **allocate-windows** (cron) | same | `npm run jobs:allocate-windows` | Hourly (`5 * * * *`); alert on failure |
 | **allocate-commissions** (cron) | same | `npm run jobs:allocate-commissions` | Daily |
-| **verify-media** (cron) | same | `npm run jobs:verify-media` | Nightly; add a monthly `-- --deep` |
+| ~~verify-media (cron)~~ | — | — | Runs **inside the worker** once a day, because only the worker holds the backup keys. Failures are logged as errors. Run `jobs:verify-media -- --deep` by hand monthly |
 | **verify-spend-counters** (cron) | same | `npm run jobs:verify-spend-counters` | Nightly |
 | **check-attestation-roots** (cron) | same | `npm run jobs:check-attestation-roots` | Weekly; failure = Google published a new root to pin |
 
@@ -36,11 +36,7 @@ Cron services must exit when done; all these commands do. Set the **pre-deploy c
 
 ## First deploy
 1. Create the project, Postgres, the `media` bucket, and the **api** service from the GitHub repo, then set the variables. Railway builds `infra/app/Dockerfile`, runs `npm run db:migrate`, and starts the API.
-2. Open a shell on **api** (`railway ssh`, or a one-off command) and create the first admin:
-   ```bash
-   npm run jobs:bootstrap-admin -- --email you@company.com --name "Your Name"
-   ```
-   It prints a single-use, 30-minute link. Open it, choose a password, sign in, and turn on two-step verification under **Security**. Later staff are invited from the portal. The command refuses to run once a super admin exists.
+2. Create the first admin **without a terminal**: on the **worker**, add `BOOTSTRAP_ADMIN_EMAIL` (your email) and optionally `BOOTSTRAP_ADMIN_NAME`. On restart the worker logs `FIRST ADMIN: open this single-use link…`. Open it within 30 minutes, choose a password, sign in, and turn on two-step verification under **Security**. If the link expires, restart the worker for a fresh one (same email only, and only until a password has been chosen). Then delete the two variables. With a shell (`railway ssh`), `npm run jobs:bootstrap-admin -- --email you@company.com --name "Your Name"` does the same.
 3. Run `npm run jobs:check-media-storage` and make sure every line is PASS.
 4. Add the **worker** and the cron services.
 5. In the portal: draft the real revenue rules and have them approved by two different approvers with signed contract references. Then invite fleets, advertisers and creators.

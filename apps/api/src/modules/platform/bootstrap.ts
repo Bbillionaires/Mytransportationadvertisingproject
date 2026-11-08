@@ -32,3 +32,20 @@ export async function bootstrapAdmin(db: Db, config: Config, email: string, name
     return issueUserToken(tx, config, u.id, email, 'PASSWORD_RESET');
   });
 }
+
+/**
+ * No-terminal first-admin setup (Railway): set BOOTSTRAP_ADMIN_EMAIL (and optionally BOOTSTRAP_ADMIN_NAME) on the
+ * worker. On start it creates the first super admin, or re-issues the unused link for that same email, and logs the
+ * single-use 30-minute password link. Once a password has been chosen it does nothing (remove the variables then).
+ */
+export async function bootstrapFromEnv(db: Db, config: Config, env: NodeJS.ProcessEnv): Promise<{ status: 'skipped' | 'link' | 'refused'; link?: string; reason?: string }> {
+  const email = env.BOOTSTRAP_ADMIN_EMAIL?.trim().toLowerCase();
+  if (!email) return { status: 'skipped' };
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { status: 'refused', reason: 'BOOTSTRAP_ADMIN_EMAIL is not a valid email address' };
+  const name = env.BOOTSTRAP_ADMIN_NAME?.trim().slice(0, 200) || 'Administrator';
+  try {
+    return { status: 'link', link: await bootstrapAdmin(db, config, email, name) };
+  } catch (e) {
+    return { status: 'refused', reason: (e as Error).message };
+  }
+}

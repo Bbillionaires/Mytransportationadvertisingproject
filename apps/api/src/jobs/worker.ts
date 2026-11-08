@@ -12,6 +12,8 @@ import { runValidation } from '../modules/events/validator.js';
 import { runBackups } from '../modules/media/backup.js';
 import { processPendingUploads } from '../modules/media/process.js';
 import { processPendingWebhooks } from '../modules/payments/webhooks.js';
+import { bootstrapFromEnv } from '../modules/platform/bootstrap.js';
+import { verifyMedia } from '../modules/media/backup.js';
 
 const config = loadConfig();
 const db = createPool(config.DATABASE_URL);
@@ -26,7 +28,19 @@ const jobs: Array<{ name: string; everyMs: number; run: () => Promise<unknown>; 
   { name: 'process-webhooks', everyMs: 15_000, run: () => (config.PAYMENTS_PROVIDER === 'disabled' ? Promise.resolve() : processPendingWebhooks(db)), next: 0 },
   { name: 'send-email', everyMs: 15_000, run: () => deliverPendingEmail(db, email), next: 0 },
   { name: 'backup-media', everyMs: 5 * 60_000, run: () => runBackups(db, config), next: 0 },
+  // Nightly media audit here (not a cron service) because only this service holds the backup keys. Problems are logged
+  // as errors; a monthly deep re-hash stays a manual/cron run (jobs:verify-media -- --deep).
+  { name: 'verify-media', everyMs: 24 * 3600_000, next: Date.now() + 10 * 60_000, run: async () => {
+    const r = await verifyMedia(db, config, { deep: false });
+    if (r.problems.length || r.backups.length === 0) throw new Error(`media audit: ${r.problems.length} problem(s), ${r.backups.length} backup(s): ${JSON.stringify(r.problems.slice(0, 5))}`);
+    return { checked: r.checked, repaired: r.repaired };
+  } },
 ];
+
+// First admin without a terminal (docs/RAILWAY_DEPLOY.md): BOOTSTRAP_ADMIN_EMAIL on this service.
+const boot = await bootstrapFromEnv(db, config, process.env);
+if (boot.status === 'link') log({ msg: 'FIRST ADMIN: open this single-use link within 30 minutes to choose your password, then remove BOOTSTRAP_ADMIN_EMAIL', link: boot.link });
+else if (boot.status === 'refused') log({ msg: 'first-admin setup skipped', reason: boot.reason });
 
 log({ msg: 'worker started', jobs: jobs.map((j) => `${j.name}/${j.everyMs / 1000}s`) });
 while (!stopping) {

@@ -6,7 +6,7 @@ import { buildApp } from '../src/app.js';
 import { loadConfig } from '../src/config.js';
 import { createPool, type Db } from '../src/db/pool.js';
 import { migrate } from '../src/db/migrate.js';
-import { bootstrapAdmin } from '../src/modules/platform/bootstrap.js';
+import { bootstrapAdmin, bootstrapFromEnv } from '../src/modules/platform/bootstrap.js';
 import { org, setupApp, userWithRole, type Ctx } from './helpers.js';
 
 const BASE_URL = process.env.TEST_DATABASE_URL ?? 'postgres://rmn:rmn@localhost:5432/rmn_test';
@@ -49,6 +49,40 @@ describe('first super admin bootstrap (empty production database)', () => {
     expect((await db.query(`SELECT action FROM audit_log WHERE action = 'platform.bootstrap_admin'`)).rowCount).toBe(1);
     expect((await db.query(`SELECT action FROM audit_log WHERE action = 'platform.bootstrap_link_reissued'`)).rowCount).toBe(1);
     await app.close();
+  });
+});
+
+describe('first admin from a Railway variable (no terminal)', () => {
+  const ENV_DB = 'rmn_bootstrap_env_test';
+  const ENV_URL = BASE_URL.replace(/\/[^/?]+(\?|$)/, `/${ENV_DB}$1`);
+  let db: Db;
+  beforeAll(async () => {
+    const admin = new pg.Client({ connectionString: BASE_URL });
+    await admin.connect();
+    await admin.query(`DROP DATABASE IF EXISTS ${ENV_DB}`);
+    await admin.query(`CREATE DATABASE ${ENV_DB}`);
+    await admin.end();
+    await migrate(ENV_URL, () => {});
+    db = createPool(ENV_URL);
+  }, 60_000);
+  afterAll(async () => { await db?.end(); });
+
+  it('does nothing without the variable, rejects a bad email, issues a link, re-issues on restart, and stops once claimed', async () => {
+    const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: ENV_URL, ...keys, PAYMENTS_PROVIDER: 'disabled', APP_PUBLIC_URL: 'https://rides.example.com', LOG_LEVEL: 'silent' });
+    expect(await bootstrapFromEnv(db, config, {})).toEqual({ status: 'skipped' });
+    expect((await bootstrapFromEnv(db, config, { BOOTSTRAP_ADMIN_EMAIL: 'not-an-email' })).status).toBe('refused');
+    const first = await bootstrapFromEnv(db, config, { BOOTSTRAP_ADMIN_EMAIL: ' Owner@Example.test ', BOOTSTRAP_ADMIN_NAME: 'Owner' });
+    expect(first).toMatchObject({ status: 'link', link: expect.stringMatching(/^https:\/\/rides\.example\.com\/portal\/\?reset=/) });
+    const restart = await bootstrapFromEnv(db, config, { BOOTSTRAP_ADMIN_EMAIL: 'owner@example.test' });
+    expect(restart.status).toBe('link');
+    expect(restart.link).not.toBe(first.link);
+    expect((await bootstrapFromEnv(db, config, { BOOTSTRAP_ADMIN_EMAIL: 'someone-else@example.test' })).status).toBe('refused');
+
+    const app = await buildApp({ config, db, logger: false });
+    const rc = await app.inject({ method: 'POST', url: '/v1/auth/password-reset/confirm', payload: { token: decodeURIComponent(restart.link!.split('reset=')[1]!), newPassword: 'violet tractor ocean 77 maple' } });
+    expect(rc.statusCode, rc.body).toBe(200);
+    await app.close();
+    expect(await bootstrapFromEnv(db, config, { BOOTSTRAP_ADMIN_EMAIL: 'owner@example.test' })).toMatchObject({ status: 'refused', reason: expect.stringMatching(/already exists/) });
   });
 });
 
