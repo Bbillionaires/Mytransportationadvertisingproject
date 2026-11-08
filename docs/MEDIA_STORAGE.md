@@ -30,15 +30,16 @@ Do this signed in as the account owner, with your authenticator app at hand.
 1. **Pick a region** (top right): **US East (Ohio) us-east-2**. Any region different from your Railway bucket's is fine.
 2. Search **S3** → **Create bucket**:
    - **Bucket type:** General purpose.
+   - **Bucket namespace:** **Global** (the standard kind).
    - **Bucket name:** for example `rmn-media-backup-<something-unique>`. Lowercase, numbers and hyphens only.
    - **Object Ownership:** ACLs disabled (default).
    - **Block all public access:** leave it **ON** (default).
    - **Bucket Versioning:** **Enable**.
-   - **Default encryption:** SSE-S3 (default).
+   - **Default encryption:** SSE-S3 (Amazon S3 managed keys, the default and free). Not the KMS options: they cost per request and need extra permissions. Bucket Key doesn't apply.
    - **Advanced settings → Object Lock:** **Enable**, and tick the acknowledgement. *This can only be turned on now, at creation.*
    - **Create bucket**.
 3. Open the bucket → **Properties** → **Object Lock** → **Edit**:
-   - **Default retention:** Enable. **Mode: Governance.** **Retention period: 1 year.**
+   - **Default retention:** Enable. **Mode: Governance.** **Retention type: Fixed retention** (not "variable retention with event hold"; the app doesn't manage holds). **Retention period: 1 year.**
    - Save. Governance means nobody can delete or change a locked copy unless they hold a special permission, and the backup user never gets it. Compliance mode would also stop *you* from removing content you are legally required to delete, so don't use it.
 4. Create the backup user's permissions. Search **IAM** → **Policies** → **Create policy** → **JSON**, paste this, and replace `BUCKET` (two places in each statement) with your bucket name:
    ```json
@@ -63,7 +64,7 @@ Do this signed in as the account owner, with your authenticator app at hand.
 5. **IAM** → **Users** → **Create user**:
    - **User name:** `rmn-media-backup`. **Do not** give it console access.
    - **Permissions:** attach policies directly → `rmn-media-backup-writer` → **Create user**.
-6. Open the user → **Security credentials** → **Create access key** → **Application running outside AWS** → **Create**.
+6. Open the user → **Security credentials** tab (or **Create access key** under "Access key 1" in the Summary) → **Create access key** → **Application running outside AWS** → **Create**.
    - Copy the **Access key ID** and **Secret access key** straight into Railway (Step 3).
    - **Never paste them into chat or email.** AWS shows the secret only once; if you lose it, delete the key and create a new one.
 

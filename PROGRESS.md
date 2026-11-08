@@ -449,3 +449,9 @@ Bugs found by the first real deploy and fixed:
 - **Security:** the database pool switched to the restricted role in the background. When that failed it crashed the process, and a connection could have been used as the privileged login role. Now a connection is never handed out until the role switch succeeds (fail closed); covered by `rls.test.ts`.
 
 Still to do on Railway: first admin (needs the owner's email and them at a device for the 30-minute link), cron services, AWS backup bucket, email domain.
+
+### 2026-11-08: AWS backup bucket live
+- `rideshare-media-backup-henry` (us-east-2): versioning, Object Lock Governance with fixed 1-year retention, SSE-S3. Backup-only IAM user `rmn-media-backup` (no console access).
+- `jobs:check-media-storage` against it: all PASS (versioning, Object Lock GOVERNANCE 1 year, can add files). Test file stored as Glacier Instant Retrieval.
+- With the backup key: plain delete, versioned delete, bulk delete and delete-with-governance-bypass are all **refused (AccessDenied)**.
+- Railway worker restarted with `BACKUP1_*`; backups run every 5 minutes. The product owner chose to send the access key through chat; rotate it later (D-057 note).
