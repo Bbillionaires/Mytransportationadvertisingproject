@@ -10,14 +10,14 @@
 | **Postgres** | Railway Postgres template | — | Daily backups on; PITR when available |
 | **media** (bucket) | Railway Bucket | — | Region closest to the first city; see docs/MEDIA_STORAGE.md |
 | **api** | this repo, Dockerfile `infra/app/Dockerfile` | default (`node --import tsx src/server.ts`) | Public domain (port 8080); **pre-deploy command** `npm run db:migrate`; health check `/readyz`; `HOST=::` |
-| **worker** | same repo/image | `npm run jobs:worker` | Always on (restart: always); no pre-deploy command, no health check |
-| **allocate-windows** (cron) | same | `npm run jobs:allocate-windows` | Hourly (`5 * * * *`); alert on failure |
-| **allocate-commissions** (cron) | same | `npm run jobs:allocate-commissions` | Daily |
+| **worker** | same repo/image | `node --import tsx src/jobs/worker.ts` | Always on (restart: always); no pre-deploy command, no health check. Holds the backup keys |
+| **allocate-windows** (cron) | same | `node --import tsx src/jobs/allocate-windows.ts` | Hourly (`5 * * * *`); alert on failure |
+| **allocate-commissions** (cron) | same | `node --import tsx src/jobs/allocate-commissions.ts` | Daily `20 7 * * *` (UTC) |
 | ~~verify-media (cron)~~ | — | — | Runs **inside the worker** once a day, because only the worker holds the backup keys. Failures are logged as errors. Run `jobs:verify-media -- --deep` by hand monthly |
-| **verify-spend-counters** (cron) | same | `npm run jobs:verify-spend-counters` | Nightly |
-| **check-attestation-roots** (cron) | same | `npm run jobs:check-attestation-roots` | Weekly; failure = Google published a new root to pin |
+| **verify-spend-counters** (cron) | same | `node --import tsx src/jobs/verify-spend-counters.ts` | Nightly `40 7 * * *` (UTC) |
+| **check-attestation-roots** (cron) | same | `node --import tsx src/jobs/check-attestation-roots.ts` | Weekly `10 8 * * 1` (UTC); failure = Google published a new root to pin |
 
-Cron services must exit when done; all these commands do. Set the **pre-deploy command** (`npm run db:migrate`) and the `/readyz` health check on **api** only, so migrations run once per deploy and job services aren't health-checked over HTTP.
+Start jobs with `node --import tsx …` rather than `npm run …`: npm reports every normal stop as an error and doesn't pass the stop signal on cleanly. Cron services must exit when done; all these commands do. Set the **pre-deploy command** (`npm run db:migrate`) and the `/readyz` health check on **api** only, so migrations run once per deploy and job services aren't health-checked over HTTP.
 
 ## Variables (api and worker; cron services need the database and storage ones)
 | Variable | Value |

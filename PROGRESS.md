@@ -455,3 +455,8 @@ Still to do on Railway: first admin (needs the owner's email and them at a devic
 - `jobs:check-media-storage` against it: all PASS (versioning, Object Lock GOVERNANCE 1 year, can add files). Test file stored as Glacier Instant Retrieval.
 - With the backup key: plain delete, versioned delete, bulk delete and delete-with-governance-bypass are all **refused (AccessDenied)**.
 - Railway worker restarted with `BACKUP1_*`; backups run every 5 minutes. The product owner chose to send the access key through chat; rotate it later (D-057 note).
+
+### 2026-11-08: first admin without a terminal; scheduled jobs live
+- `BOOTSTRAP_ADMIN_EMAIL` on the worker creates the first super admin and logs the single-use link (re-issued on restart until a password is chosen). `deploy.test.ts`.
+- Railway cron services: allocate-windows (hourly), allocate-commissions (daily), verify-spend-counters (nightly), check-attestation-roots (weekly). Each ran locally in production mode against an empty database and exited 0. The nightly media audit runs inside the worker (only it holds the backup keys).
+- Fixed a weekday-dependent test (10 business days from a Sunday is 12 calendar days).
