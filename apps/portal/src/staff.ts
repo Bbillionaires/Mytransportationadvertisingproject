@@ -5,7 +5,7 @@
  * AI pre-screen results are shown as advisory only — a person makes every decision (D-034).
  */
 import { can, currentUserId, team, type Section } from './main';
-import { act, api, btn, chip, dialog, download, el, errText, fmtDate, input, money, render, select, toast, type Kid } from './ui';
+import { act, api, btn, chip, dialog, download, el, errText, fmtDate, info, input, money, render, select, toast, type Kid } from './ui';
 
 export const staffSections: Section[] = [
   { id: 'overview', title: 'Overview', perm: '', view: () => overview() },
@@ -17,6 +17,7 @@ export const staffSections: Section[] = [
   { id: 'finance', title: 'Finance', perm: 'finance.read', view: () => finance() },
   { id: 'organizations', title: 'Organizations', perm: '', view: () => organizations() },
   { id: 'audit', title: 'Audit log', perm: 'platform.audit.read', view: () => auditLog() },
+  { id: 'users', title: 'Users', perm: 'platform.users.manage', view: () => users() },
   { id: 'team', title: 'Team', perm: 'platform.users.manage', view: () => team(['finance_approver', 'finance_admin', 'support_agent', 'super_admin'],
     'finance approver: approves revenue rules and journal entries · finance admin: drafts rules and entries · support agent: helps customers · super admin: everything. Everyone must turn on two-step verification.') },
 ];
@@ -379,4 +380,58 @@ async function draftRule(rules: RuleRow[]) {
   if (await act(() => api('POST', '/v1/finance/revenue-rules', { category: c.code, effectiveFrom, driverBps, creatorBps, platformBps,
     unallocatedDriverShare: v.unallocDriver, unallocatedCreatorShare: v.unallocCreator, permittedDeductions: deductions,
     eligibleRevenueDefinition: v.definition, contractRef: v.contract }), 'Draft saved. Two other approvers now need to approve it.')) await finance();
+}
+
+// ------------------------------------------------------------------ users: account recovery (platform staff)
+interface UserRow { id: string; email: string; display_name: string; status: 'ACTIVE' | 'LOCKED' | 'DISABLED'; mfa_enabled: boolean; created_at: string;
+  memberships: Array<{ org_name: string; org_kind: string; role: string }> }
+
+/** Find a person by exact email and help them back in: reset link, lost authenticator, unlock, disable/re-enable. */
+async function users(email = '') {
+  const f = el('form', { class: 'inline', id: 'user-search' }, input('Email address', { name: 'email', type: 'email', required: '', value: email }),
+    el('button', { class: 'btn primary', type: 'submit' }, 'Find'));
+  f.addEventListener('submit', (e) => { e.preventDefault(); void users(String(new FormData(f).get('email')).trim()); });
+  let result: Kid = null;
+  if (email) {
+    try {
+      const u = (await api<{ items: UserRow[] }>('GET', `/v1/users?email=${encodeURIComponent(email)}`)).items[0];
+      result = u ? userCard(u) : el('p', { class: 'muted', id: 'user-none' }, 'No account uses that email address.');
+    } catch (e) { result = el('p', { class: 'err' }, errText(e)); }
+  }
+  render(el('h1', {}, 'Users'),
+    el('div', { class: 'card' }, el('h2', {}, 'Help someone back into their account'), f,
+      el('p', { class: 'muted' }, 'Before doing anything, confirm you are talking to the account’s owner (for example, call them back on a number you already have). Every action asks for a reason and is recorded in the audit log.')),
+    result);
+}
+
+function userCard(u: UserRow) {
+  const reason = async (title: string, explain: string, label: string, danger = false) => {
+    const v = await dialog(title, [el('p', {}, explain),
+      el('label', {}, 'Reason (recorded in the audit log)', el('textarea', { name: 'reason', required: '', minlength: '10', maxlength: '1000', rows: '2', placeholder: 'e.g. Called in, identity confirmed by phone' }))], label, danger);
+    return v?.reason ?? null;
+  };
+  const action = (label: string, path: string, title: string, explain: string, ok: string, danger = false) => btn(label, async () => {
+    const r = await reason(title, explain, label, danger);
+    if (r && await act(() => api('POST', `/v1/users/${u.id}/${path}`, { reason: r }), ok)) await users(u.email);
+  }, `btn small${danger ? ' danger' : ''}`);
+  const status = u.status === 'ACTIVE' ? chip('Active', 'ok') : u.status === 'LOCKED' ? chip('Locked (too many wrong passwords)', 'warn') : chip('Disabled', 'err');
+  return el('div', { class: 'card', id: 'user-card' }, el('h2', {}, u.display_name), el('p', {}, u.email, ' ', status),
+    el('p', { class: 'sub' }, `Two-step verification: ${u.mfa_enabled ? 'on' : 'off'} · account created ${fmtDate(u.created_at)}`),
+    u.memberships.length ? el('ul', {}, ...u.memberships.map((m) => el('li', {}, `${m.org_name} (${m.org_kind.replace(/_/g, ' ').toLowerCase()}): ${m.role.replace(/_/g, ' ')}`)))
+      : el('p', { class: 'muted' }, 'Not a member of any organization (a rider or an unfinished sign-up).'),
+    el('div', { class: 'actions' },
+      u.status !== 'DISABLED' ? btn('Create a password reset link', async () => {
+        const r = await reason('Password reset link', 'Creates a single-use link that lets them choose a new password within 30 minutes. It also unlocks the account and signs them out everywhere once used.', 'Create link');
+        if (!r) return;
+        try {
+          const out = await api<{ link?: string; emailed?: boolean }>('POST', `/v1/users/${u.id}/password-reset-link`, { reason: r });
+          if (out.link) await info('Send this link to them', el('p', {}, 'Email isn’t connected yet, so nothing was sent. Send this to them yourself (text or email). It works once, for 30 minutes.'),
+            el('div', { class: 'code', id: 'reset-link' }, out.link), btn('Copy link', async () => { try { await navigator.clipboard.writeText(out.link!); toast('Link copied.'); } catch { toast('Copy failed; select the link instead.', true); } }, 'btn small'));
+          else toast('A reset link was emailed to them.');
+        } catch (e) { toast(errText(e), true); }
+      }, 'btn small primary') : null,
+      u.mfa_enabled ? action('Turn off two-step (lost phone)', 'mfa-reset', 'Turn off two-step verification', 'For a lost or replaced phone. They sign in with their password, then must set two-step up again before finance or admin work. They are signed out everywhere now.', 'Two-step verification turned off; they must set it up again.', true) : null,
+      u.status === 'LOCKED' ? action('Unlock', 'unlock', 'Unlock the account', 'Lets them try their password again.', 'Account unlocked.') : null,
+      u.status === 'DISABLED' ? action('Re-enable', 'enable', 'Re-enable the account', 'They can sign in again.', 'Account re-enabled.')
+        : action('Disable', 'disable', 'Disable the account', 'They are signed out everywhere and can’t sign in until re-enabled.', 'Account disabled.', true)));
 }

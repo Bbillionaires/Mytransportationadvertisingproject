@@ -351,6 +351,23 @@ async function main() {
     const ctoRoles = await q(`SELECT m.role_code FROM memberships m JOIN users u ON u.id = m.user_id WHERE u.email = 'cto@example.test' AND m.status = 'ACTIVE'`);
     assert.deepEqual(ctoRoles.map((r: any) => r.role_code), ['finance_admin']);
 
+    step('Users: the CTO forgot their password; staff look them up, create a reset link (email is off) and the CTO uses it');
+    await nav(sa, 'Users');
+    await sa.fill('#user-search input[name=email]', 'cto@example.test');
+    await sa.click('#user-search button[type=submit]');
+    await sa.waitForSelector('#user-card:has-text("Casey CTO"):has-text("finance admin")');
+    await sa.click('#user-card button:has-text("Create a password reset link")');
+    await sa.fill('#dlg textarea[name=reason]', 'Called in, identity confirmed by phone (SYNTHETIC)');
+    await sa.click('#dlg button:has-text("Create link")');
+    const resetLink = (await sa.textContent('#reset-link'))!.trim();
+    await sa.click('#dlg button:has-text("Done")');
+    await cto.goto(resetLink);
+    await cto.fill('#reset-form input[name=pw]', 'violet harbor lantern 2026');
+    await cto.click('#reset-form button[type=submit]');
+    await cto.waitForSelector('text=Password changed');
+    const [rl] = await q(`SELECT details->>'reason' AS reason FROM audit_log WHERE action = 'user.password_reset_link_created' ORDER BY id DESC LIMIT 1`);
+    assert.match(rl.reason, /identity confirmed/);
+
     assert.deepEqual(problems, [], 'no page errors or CSP violations');
     console.log(`  ✓ staff portal e2e passed (screenshots in ${SHOTS})`);
   } finally {

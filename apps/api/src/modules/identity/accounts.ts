@@ -157,6 +157,37 @@ export async function accountRoutes(app: FastifyInstance, { db, config }: { db: 
     });
   });
 
+  // ---------- account recovery by platform staff (portal → Users) ----------
+  /** Exact-email lookup only (no browsing the user base): status, two-step, and where the person is a member. */
+  app.get('/v1/users', async (req) => {
+    await authorize(db, req, 'platform.users.manage');
+    const { email } = parse(z.object({ email: z.string().email() }), req.query);
+    const u = (await db.query(`SELECT id, email, display_name, status, mfa_enabled, email_verified_at, created_at, failed_logins FROM users WHERE email = $1`, [email])).rows[0];
+    if (!u) return { items: [] };
+    const m = await db.query(`SELECT o.name AS org_name, o.kind AS org_kind, m.role_code AS role FROM memberships m JOIN organizations o ON o.id = m.org_id
+                               WHERE m.user_id = $1 AND m.status = 'ACTIVE' ORDER BY o.name`, [u.id]);
+    return { items: [{ ...u, memberships: m.rows }] };
+  });
+
+  /**
+   * Forgotten password while email isn't connected (D-044): staff create the normal single-use 30-minute reset link and
+   * pass it on after confirming who they're talking to. Once email works, the link is only emailed. Audited with a reason.
+   */
+  app.post('/v1/users/:userId/password-reset-link', async (req) => {
+    await authorize(db, req, 'platform.users.manage');
+    const { userId } = parse(z.object({ userId: uuid }), req.params);
+    const { reason } = parse(z.object({ reason: z.string().min(10).max(1000) }), req.body);
+    if (userId === requireAuth(req).userId) throw forbidden('use Forgot password for your own account');
+    return withTx(db, async (tx) => {
+      const u = (await tx.query(`SELECT id, email FROM users WHERE id = $1 AND status IN ('ACTIVE','LOCKED') FOR UPDATE`, [userId])).rows[0];
+      if (!u) throw notFound('active or locked user not found');
+      const resetLink = await issueUserToken(tx, config, u.id, u.email, 'PASSWORD_RESET');
+      const show = config.EMAIL_PROVIDER === 'log';
+      await audit(tx, actorOf(req), 'user.password_reset_link_created', { type: 'user', id: u.id }, { reason, linkShownToStaff: show });
+      return show ? { link: resetLink, expiresInMinutes: 30, emailNotConnected: true } : { emailed: true };
+    });
+  });
+
   // ---------- support actions on accounts (platform staff, MFA, reason required, audited) ----------
   const supportAction = (path: string, action: string, run: (tx: Tx, userId: string) => Promise<void>) =>
     app.post(`/v1/users/:userId/${path}`, async (req) => {

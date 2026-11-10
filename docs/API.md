@@ -234,3 +234,5 @@ Framework client errors (unsupported media type, payload too large, malformed bo
 
 | PATCH | `/v1/orgs/:orgId/members/:membershipId` | `org.members.manage` (`platform.users.manage` for the platform) `{role}`: change a member's role; not your own; never demotes the last admin (409); audited |
 | POST | `/v1/orgs/:orgId/members/:membershipId/remove` | same rules; access ends on the member's next request |
+| GET | `/v1/users?email=` | `platform.users.manage`: exact-email lookup (status, two-step, memberships); no browsing |
+| POST | `/v1/users/:userId/password-reset-link` | `platform.users.manage` `{reason}`: single-use 30-minute reset link, shown to staff only while email is off (otherwise emailed); not for your own account; audited |

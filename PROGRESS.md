@@ -496,3 +496,5 @@ Note: one full API run had a single failure that did not repeat in three further
 | Sign-in guessing: limited to 10/min per real address; forged `X-Forwarded-For` doesn't change the key | — | ✅ verified, no change | probe output |
 Rerun any time: `bash infra/security-probe.sh <url>`.
 | Show/Hide button on every password box (portal and rider app), added automatically to new screens; hides again on submit | ✅ | fleet portal and rider e2e |
+| Staff **Users** page: find a person by exact email, create a password reset link (shown while email is off), turn off two-step for a lost phone, unlock, disable/re-enable; reason required, audited | ✅ | `recovery.test.ts`; staff portal e2e |
+| Why pushes don't auto-deploy: the Railway GitHub app isn't installed on the repo (owner action, see RAILWAY_DEPLOY.md) | 🔎 found | Railway agent check |

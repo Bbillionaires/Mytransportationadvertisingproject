@@ -34,6 +34,13 @@ Start jobs with `node --import tsx …` rather than `npm run …`: npm reports e
 | `METRICS_TOKEN` | random 32+ characters, to scrape `/metrics` |
 | `LOG_LEVEL` | `info` |
 
+## Automatic deploys on push
+Railway only redeploys on a push if its GitHub app can see the repository. Without it, deploys must be triggered by hand.
+1. GitHub → **Settings → Applications → Installed GitHub Apps → Railway → Configure** → Repository access → add
+   `mytransportationadvertisingproject` (or "All repositories") → Save.
+2. Railway → each service (**api**, **worker**, and the cron services) → **Settings → Source** → confirm the repo and
+   branch `claude/new-session-rjqusc`, and turn on **Auto Deploy**.
+
 ## First deploy
 1. Create the project, Postgres, the `media` bucket, and the **api** service from the GitHub repo, then set the variables. Railway builds `infra/app/Dockerfile`, runs `npm run db:migrate`, and starts the API.
 2. Create the first admin **without a terminal**: on the **worker**, add `BOOTSTRAP_ADMIN_EMAIL` (your email) and optionally `BOOTSTRAP_ADMIN_NAME`. On restart the worker logs `FIRST ADMIN: open this single-use link…`. Open it within 30 minutes, choose a password, sign in, and turn on two-step verification under **Security**. If the link expires, restart the worker for a fresh one (same email only, and only until a password has been chosen). Then delete the two variables. With a shell (`railway ssh`), `npm run jobs:bootstrap-admin -- --email you@company.com --name "Your Name"` does the same.
