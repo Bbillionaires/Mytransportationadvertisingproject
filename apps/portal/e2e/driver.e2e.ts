@@ -94,6 +94,7 @@ async function main() {
     await admin.fill('#invite-form input[name=email]', driverEmail);
     await admin.selectOption('#invite-form select[name=role]', 'driver');
     await admin.click('#invite-form button');
+    await admin.click('#dlg button:has-text("Done")'); // email not connected: link shown to send yourself
     await admin.waitForSelector('#invitations tr:has-text("Drew Driver")');
     const driver = await open('driver', true);
     await driver.goto(await emailLink(driverEmail, 'invitation'));

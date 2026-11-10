@@ -293,6 +293,54 @@ async function main() {
     assert.equal(bal.balance, '50000', 'advertiser credited by the approved entry');
     await ap.screenshot({ path: path.join(SHOTS, 'staff-finance.png') });
 
+    step('revenue split rule: finance drafts it (pre-filled 5/60/35), one approver approves, a second different person gives final approval');
+    await fin.reload(); await nav(fin, 'Finance');
+    await fin.waitForSelector('#rules-current tr[data-category="CREATOR_CONTENT_AD"]:has-text("No approved rule")');
+    await fin.click('#draft-rule');
+    assert.equal(await fin.inputValue('#dlg input[name=driver]'), '5');
+    assert.equal(await fin.inputValue('#dlg input[name=creator]'), '60');
+    await fin.waitForSelector('#platform-share:has-text("Platform keeps 35%")');
+    await fin.selectOption('#dlg select[name=category]', 'STANDALONE_AD');
+    await fin.waitForSelector('#platform-share:has-text("Platform keeps 95%")');
+    assert.equal(await fin.isDisabled('#dlg input[name=creator]'), true, 'no creator share for an ad without a creator');
+    await fin.selectOption('#dlg select[name=category]', 'CREATOR_CONTENT_AD');
+    await fin.fill('#dlg input[name=contract]', 'Driver & Creator Terms v1.0 (SYNTHETIC)');
+    await fin.click('#dlg button:has-text("Save draft")');
+    await fin.waitForSelector('#toast:has-text("Draft saved")');
+    await fin.waitForSelector('#rules-drafts:has-text("0 of 2 approvals")');
+    assert.equal(await fin.locator('#rules-drafts button').count(), 0, 'the drafter cannot approve');
+    await ap.reload(); await nav(ap, 'Finance');
+    await ap.click('#rules-drafts button:has-text("Approve")');
+    await ap.click('#dlg button:has-text("Approve")');
+    await ap.waitForSelector('#toast:has-text("First approval recorded")');
+    await ap.waitForSelector('#rules-drafts:has-text("1 of 2 approvals"):has-text("waiting for a second")');
+    await nav(sa, 'Finance');
+    await sa.click('#rules-drafts button:has-text("Give final approval")');
+    await sa.click('#dlg button:has-text("Give final approval")');
+    await sa.waitForSelector('#toast:has-text("now in effect")');
+    await sa.waitForSelector('#rules-current tr[data-category="CREATOR_CONTENT_AD"]:has-text("In effect v1"):has-text("platform 35%")');
+    const [rule] = await q(`SELECT driver_bps, creator_bps, platform_bps, status, created_by <> approved_by_1 AND approved_by_1 <> approved_by_2 AND created_by <> approved_by_2 AS three_people
+                              FROM revenue_rule_versions WHERE category = 'CREATOR_CONTENT_AD'`);
+    assert.deepEqual(rule, { driver_bps: 500, creator_bps: 6000, platform_bps: 3500, status: 'APPROVED', three_people: true });
+    await sa.screenshot({ path: path.join(SHOTS, 'staff-rules.png'), fullPage: true });
+
+    step('Team: invite a second finance approver; email isn’t connected, so the link is shown to send yourself; they accept it');
+    await nav(sa, 'Team');
+    await sa.fill('#invite-form input[name=displayName]', 'Casey CTO');
+    await sa.fill('#invite-form input[name=email]', 'cto@example.test');
+    await sa.selectOption('#invite-form select[name=role]', 'finance_approver');
+    await sa.click('#invite-form button:has-text("Send invitation")');
+    const inviteLink = (await sa.textContent('#invite-link'))!.trim();
+    assert.match(inviteLink, /\/portal\/\?invite=/);
+    await sa.click('#dlg button:has-text("Done")');
+    await sa.waitForSelector('#invitations tr:has-text("cto@example.test"):has-text("Pending")');
+    const cto = await open('cto');
+    await cto.goto(inviteLink);
+    await cto.fill('#invite-form input[type=password]', 'a long cto passphrase 2026');
+    await cto.click('#invite-form button[type=submit]');
+    await cto.waitForSelector('text=Invitation accepted');
+    assert.ok((await q(`SELECT accepted_at FROM invitations WHERE email = 'cto@example.test'`))[0].accepted_at, 'invitation accepted');
+
     assert.deepEqual(problems, [], 'no page errors or CSP violations');
     console.log(`  ✓ staff portal e2e passed (screenshots in ${SHOTS})`);
   } finally {

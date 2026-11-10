@@ -4,7 +4,7 @@
  * MFA-verified session; the API also enforces separation of duties (no self-approval, no deciding for your own org).
  * AI pre-screen results are shown as advisory only — a person makes every decision (D-034).
  */
-import { can, type Section } from './main';
+import { can, currentUserId, team, type Section } from './main';
 import { act, api, btn, chip, dialog, download, el, errText, fmtDate, input, money, render, select, toast, type Kid } from './ui';
 
 export const staffSections: Section[] = [
@@ -17,6 +17,8 @@ export const staffSections: Section[] = [
   { id: 'finance', title: 'Finance', perm: 'finance.read', view: () => finance() },
   { id: 'organizations', title: 'Organizations', perm: '', view: () => organizations() },
   { id: 'audit', title: 'Audit log', perm: 'platform.audit.read', view: () => auditLog() },
+  { id: 'team', title: 'Team', perm: 'platform.users.manage', view: () => team(['finance_approver', 'finance_admin', 'support_agent', 'super_admin'],
+    'finance approver: approves revenue rules and journal entries · finance admin: drafts rules and entries · support agent: helps customers · super admin: everything. Everyone must turn on two-step verification.') },
 ];
 
 const REASONS = ['PROFANITY', 'SEXUAL_CONTENT', 'NUDITY', 'GRAPHIC_VIOLENCE', 'HATE_OR_ABUSE', 'SELF_HARM', 'DRUGS', 'WEAPONS', 'COPYRIGHT', 'NOT_FAMILY_FRIENDLY', 'LOW_QUALITY', 'MISLEADING', 'OTHER'];
@@ -219,7 +221,6 @@ async function finance() {
       if (v && await act(() => api('POST', `/v1/finance/journal-requests/${r.id}/decision`, { decision, ...(v.note ? { note: v.note } : {}) }), decision === 'APPROVE' ? 'Entry posted.' : 'Request rejected.')) await finance();
     };
     const lines = (p: any) => p.kind === 'REVERSAL' ? `Reverse entry ${p.entryId}` : (p.lines ?? []).map((l: any) => `${l.accountCode} ${l.debit ? `Dr ${money(l.debit)}` : `Cr ${money(l.credit)}`}`).join(' · ');
-    const drafts = (rules.items as any[]).filter((r) => r.status === 'DRAFT');
     const reportForm = el('form', { class: 'inline', id: 'report-form' },
       select('Report', 'report', [['income-statement', 'Income statement'], ['balance-sheet', 'Balance sheet'], ['general-ledger', 'General ledger'], ['cash-flow', 'Cash flow'], ['liabilities', 'Liabilities'], ['receivables', 'Receivables']]),
       el('button', { class: 'btn', type: 'submit' }, 'Download CSV'));
@@ -231,11 +232,7 @@ async function finance() {
           el('td', {}, can('finance.journal.approve') ? el('div', { class: 'actions' }, btn('Approve', () => decideJournal(r, 'APPROVE'), 'btn small primary'), btn('Reject', () => decideJournal(r, 'REJECT'), 'btn small danger')) : el('span', { class: 'muted' }, 'approver role needed'))))))
           : el('p', { class: 'muted' }, 'Nothing to approve.'),
         el('p', { class: 'muted' }, 'Dual control: you cannot approve a request you made.')),
-      el('div', { class: 'card', id: 'rules' }, el('h2', {}, `Revenue rules awaiting approval (${drafts.length})`),
-        drafts.length ? el('table', {}, el('tbody', {}, ...drafts.map((r) => el('tr', {},
-          el('td', {}, `${label(r.category)} v${r.version}`, el('div', { class: 'sub' }, `driver ${r.driver_bps / 100}% · creator ${r.creator_bps / 100}% · platform ${r.platform_bps / 100}% · from ${new Date(r.effective_from).toLocaleDateString()} · ${r.contract_ref}`)),
-          el('td', {}, can('finance.rules.approve') ? btn('Approve', () => act(() => api('POST', `/v1/finance/revenue-rules/${r.id}/approve`), 'Approval recorded (two different approvers are required).').then(() => finance()), 'btn small primary') : null)))))
-          : el('p', { class: 'muted' }, 'No draft rules.')),
+      revenueRulesCard(rules.items as RuleRow[]),
       el('div', { class: 'card', id: 'trial-balance' }, el('h2', {}, 'Trial balance'),
         el('p', {}, tb.balanced ? chip('Balanced', 'ok') : chip('NOT BALANCED — investigate', 'err'), ' ',
           ...Object.entries(tb.totals as Record<string, { debit: string; credit: string }>).map(([ccy, t]) => `${ccy}: debits ${money(t.debit, ccy)}, credits ${money(t.credit, ccy)}. `))),
@@ -289,3 +286,97 @@ async function systemHealth() {
           el('td', {}, el('strong', {}, c.title), el('div', { class: 'sub' }, c.detail), c.action ? el('div', { class: 'sub' }, `What to do: ${c.action}`) : null))))))));
 }
 const order = (s: HealthCheck['status']) => ({ fail: 0, warn: 1, todo: 2, ok: 3 })[s];
+
+// ------------------------------------------------------------------ revenue split rules (D-006)
+interface RuleRow { id: string; category: string; version: number; status: 'DRAFT' | 'APPROVED' | 'RETIRED'; effective_from: string; effective_to: string | null;
+  driver_bps: number; creator_bps: number; platform_bps: number; contract_ref: string; created_by: string; approved_by_1: string | null; approved_at: string | null;
+  unallocated_driver_share: string; unallocated_creator_share: string }
+const RULE_CATEGORIES: Array<{ code: string; name: string; hint: string; split: [number, number, number] }> = [
+  { code: 'CREATOR_CONTENT_AD', name: 'Ad shown with a creator’s video', hint: 'An ad played around an eligible creator’s video.', split: [5, 60, 35] },
+  { code: 'STANDALONE_AD', name: 'Ad on its own', hint: 'An ad with no eligible creator.', split: [5, 0, 95] },
+  { code: 'SALES_COMMISSION_WITH_CREATOR', name: 'Sale credited with a creator', hint: 'A tracked sale where an eligible creator gets credit.', split: [15, 10, 75] },
+  { code: 'SALES_COMMISSION_NO_CREATOR', name: 'Sale with no creator', hint: 'A tracked sale with no eligible creator.', split: [15, 0, 85] },
+];
+const pct = (bps: number) => `${bps / 100}%`;
+
+/** Current rule per category, drafts with their approval progress, and a form to draft a new version. */
+function revenueRulesCard(rules: RuleRow[]) {
+  const me = currentUserId();
+  const now = Date.now();
+  const inEffect = (c: string) => rules.find((r) => r.category === c && r.status === 'APPROVED' && Date.parse(r.effective_from) <= now && (!r.effective_to || Date.parse(r.effective_to) > now));
+  const drafts = rules.filter((r) => r.status === 'DRAFT');
+  const approveBtn = (r: RuleRow) => {
+    if (!can('finance.rules.approve')) return el('span', { class: 'muted' }, 'approver role needed');
+    if (r.created_by === me) return el('span', { class: 'muted' }, 'you drafted this: two other people approve it');
+    if (r.approved_by_1 === me) return el('span', { class: 'muted' }, 'you approved: waiting for a second, different approver');
+    return btn(r.approved_by_1 ? 'Give final approval' : 'Approve', async () => {
+      const ok = await dialog(`Approve: ${RULE_CATEGORIES.find((c) => c.code === r.category)?.name ?? r.category}`, [
+        el('p', {}, `Driver ${pct(r.driver_bps)} · creator ${pct(r.creator_bps)} · platform ${pct(r.platform_bps)} of net revenue, from ${new Date(r.effective_from).toLocaleDateString()}.`),
+        el('p', { class: 'muted' }, `Contract: ${r.contract_ref}. Once approved by two people the rule is frozen; changes need a new version that starts in the future.`)], r.approved_by_1 ? 'Give final approval' : 'Approve');
+      if (ok && await act(() => api('POST', `/v1/finance/revenue-rules/${r.id}/approve`), r.approved_by_1 ? 'Approved. The rule is now in effect from its start date.' : 'First approval recorded. A second, different approver is needed.')) await finance();
+    }, 'btn small primary');
+  };
+  return el('div', { class: 'card', id: 'rules' }, el('h2', {}, 'Revenue split rules'),
+    el('p', { class: 'muted' }, 'How net revenue is split between the driver, the creator and the platform. Each rule needs one person to draft it and two different people to approve it (D-006).'),
+    el('table', { id: 'rules-current' }, el('tbody', {}, ...RULE_CATEGORIES.map((c) => {
+      const r = inEffect(c.code);
+      return el('tr', { 'data-category': c.code }, el('td', {}, el('strong', {}, c.name), el('div', { class: 'sub' }, c.hint)),
+        el('td', {}, r ? chip(`In effect v${r.version}`, 'ok') : chip('No approved rule', 'warn'),
+          r ? el('div', { class: 'sub' }, `driver ${pct(r.driver_bps)} · creator ${pct(r.creator_bps)} · platform ${pct(r.platform_bps)} · ${r.contract_ref}`) : null));
+    }))),
+    can('finance.rules.draft') ? btn('Draft a rule', () => draftRule(rules), 'btn', { id: 'draft-rule' }) : null,
+    el('h3', {}, `Waiting for approval (${drafts.length})`),
+    drafts.length ? el('table', { id: 'rules-drafts' }, el('tbody', {}, ...drafts.map((r) => el('tr', { 'data-rule': r.id },
+      el('td', {}, `${RULE_CATEGORIES.find((c) => c.code === r.category)?.name ?? r.category} v${r.version}`,
+        el('div', { class: 'sub' }, `driver ${pct(r.driver_bps)} · creator ${pct(r.creator_bps)} · platform ${pct(r.platform_bps)} · from ${new Date(r.effective_from).toLocaleDateString()} · ${r.contract_ref}`)),
+      el('td', {}, chip(r.approved_by_1 ? '1 of 2 approvals' : '0 of 2 approvals', r.approved_by_1 ? 'warn' : '')),
+      el('td', {}, approveBtn(r))))))
+      : el('p', { class: 'muted' }, 'No draft rules.'));
+}
+
+async function draftRule(rules: RuleRow[]) {
+  const cat = select('Category', 'category', RULE_CATEGORIES.map((c) => [c.code, c.name]));
+  const num = (label: string, name: string) => input(label, { name, type: 'number', min: '0', max: '100', step: '0.01', required: '', inputmode: 'decimal' });
+  const driver = num('Driver %', 'driver'), creator = num('Creator %', 'creator');
+  const platform = el('p', { id: 'platform-share', class: 'sub' }, '');
+  const field = (l: HTMLElement) => l.querySelector('input,select') as HTMLInputElement;
+  const today = new Date().toISOString().slice(0, 10);
+  const from = input('Starts on', { name: 'from', type: 'date', required: '', value: today });
+  const sync = () => {
+    const d = Number(field(driver).value || 0), c = Number(field(creator).value || 0), p = Math.round((100 - d - c) * 100) / 100;
+    platform.textContent = p < 0 ? 'Driver and creator together can’t exceed 100%.' : `Platform keeps ${p}%.`;
+    platform.className = p < 0 ? 'err' : 'sub';
+  };
+  const prefill = () => {
+    const c = RULE_CATEGORIES.find((x) => x.code === field(cat).value)!;
+    field(driver).value = String(c.split[0]); field(creator).value = String(c.split[1]);
+    field(creator).disabled = c.split[1] === 0; // categories without a creator never pay one
+    const current = rules.find((r) => r.category === c.code && r.status === 'APPROVED' && !r.effective_to);
+    // A new version that replaces an approved one must start in the future, so history never changes.
+    field(from).value = current ? new Date(Date.now() + 86_400_000).toISOString().slice(0, 10) : today;
+    field(from).min = current ? new Date(Date.now() + 86_400_000).toISOString().slice(0, 10) : '';
+    sync();
+  };
+  field(cat).addEventListener('change', prefill); field(driver).addEventListener('input', sync); field(creator).addEventListener('input', sync);
+  prefill();
+  const v = await dialog('Draft a revenue split rule', [cat, el('div', { class: 'row' }, driver, creator), platform, from,
+    select('If no driver qualifies, their share goes to', 'unallocDriver', [['TO_PLATFORM', 'the platform'], ['HOLD', 'a hold account (decide later)']]),
+    select('If no creator qualifies, their share goes to', 'unallocCreator', [['TO_PLATFORM', 'the platform'], ['HOLD', 'a hold account (decide later)']]),
+    el('label', { class: 'check' }, el('input', { type: 'checkbox', name: 'dedFees', checked: '' }), ' Deduct payment processing fees before splitting'),
+    el('label', { class: 'check' }, el('input', { type: 'checkbox', name: 'dedCosts', checked: '' }), ' Deduct direct campaign costs before splitting'),
+    el('label', {}, 'What counts as revenue', el('textarea', { name: 'definition', rows: '2', required: '', minlength: '10', maxlength: '4000' },
+      'Validated, billable net revenue: gross receipts minus sales tax, refunds, credits and chargebacks, minus the deductions ticked above.')),
+    input('Contract reference', { name: 'contract', required: '', minlength: '2', maxlength: '200', placeholder: 'e.g. Driver & Creator Terms v1.0, signed 2026-11-10' }),
+    el('p', { class: 'muted' }, 'You can’t approve a rule you drafted. Two other people with the approver role must approve it.')], 'Save draft');
+  if (!v) return;
+  const c = RULE_CATEGORIES.find((x) => x.code === v.category)!;
+  const driverBps = Math.round(Number(v.driver) * 100), creatorBps = c.code === 'STANDALONE_AD' || c.code === 'SALES_COMMISSION_NO_CREATOR' ? 0 : Math.round(Number(v.creator ?? 0) * 100);
+  const platformBps = 10000 - driverBps - creatorBps;
+  if (platformBps < 0) { toast('Driver and creator together can’t exceed 100%.', true); return; }
+  const startOfDay = new Date(`${v.from}T00:00:00`);
+  const effectiveFrom = startOfDay.getTime() < Date.now() ? new Date().toISOString() : startOfDay.toISOString();
+  const deductions = [v.dedFees ? 'PAYMENT_PROCESSING_FEE' : null, v.dedCosts ? 'DIRECT_CAMPAIGN_COST' : null].filter(Boolean);
+  if (await act(() => api('POST', '/v1/finance/revenue-rules', { category: c.code, effectiveFrom, driverBps, creatorBps, platformBps,
+    unallocatedDriverShare: v.unallocDriver, unallocatedCreatorShare: v.unallocCreator, permittedDeductions: deductions,
+    eligibleRevenueDefinition: v.definition, contractRef: v.contract }), 'Draft saved. Two other approvers now need to approve it.')) await finance();
+}

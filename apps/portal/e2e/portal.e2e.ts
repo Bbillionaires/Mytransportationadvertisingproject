@@ -161,6 +161,9 @@ async function main() {
     await page.fill('#invite-form input[name=email]', viewerEmail);
     await page.selectOption('#invite-form select[name=role]', 'fleet_viewer');
     await page.click('#invite-form button');
+    // Email isn't connected in this environment, so the portal shows the link to send yourself (same link as the email).
+    assert.match((await page.textContent('#invite-link'))!, /\?invite=/);
+    await page.click('#dlg button:has-text("Done")');
     await page.waitForSelector('#invitations tr:has-text("Val Viewer") .chip:has-text("Pending")');
     const viewerCtx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true });
     const viewer = await viewerCtx.newPage(); watch(viewer, 'viewer');
@@ -180,6 +183,7 @@ async function main() {
     step('turn on two-step verification; the next sign-in asks for a code');
     await nav(page, 'Security');
     await page.click('#mfa-card button');
+    await page.waitForSelector('#dlg[open] input[name=code]'); // wait for the setup dialog, not a previous one
     const secret = (await page.textContent('#dlg .code'))!.trim();
     await page.fill('#dlg input[name=code]', totpAt(secret, Math.floor(Date.now() / 30_000)));
     await page.click('#dlg button:has-text("Turn on")');

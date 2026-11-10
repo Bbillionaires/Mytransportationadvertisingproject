@@ -111,11 +111,13 @@ export async function accountRoutes(app: FastifyInstance, { db, config }: { db: 
         [orgId, b.email, b.displayName, b.role, sha256hex(token), auth.userId]);
       await enqueueEmail(tx, b.email, 'invitation', `You're invited to ${org.name} on Rideshare Media Network`,
         `You have been invited to join ${org.name} as ${b.role.replace(/_/g, ' ')}.\nAccept within 7 days: ${link(config, 'invite', token)}`);
-      await audit(tx, actorOf(req), 'invitation.created', { type: 'invitation', id: i.rows[0].id, orgId }, { email: b.email, role: b.role });
-      return i.rows[0];
+      // No email provider yet (D-044): show the link once to the inviter so they can send it themselves. Audited.
+      const showLink = config.EMAIL_PROVIDER === 'log';
+      await audit(tx, actorOf(req), 'invitation.created', { type: 'invitation', id: i.rows[0].id, orgId }, { email: b.email, role: b.role, linkShownToInviter: showLink });
+      return { ...i.rows[0], link: showLink ? link(config, 'invite', token) : undefined };
     });
     reply.code(201);
-    return { invitationId: inv.id, expiresAt: inv.expires_at };
+    return { invitationId: inv.id, expiresAt: inv.expires_at, ...(inv.link ? { inviteLink: inv.link, emailNotConnected: true } : {}) };
   });
 
   app.get('/v1/orgs/:orgId/invitations', async (req) => {

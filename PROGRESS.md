@@ -475,3 +475,12 @@ Still to do on Railway: first admin (needs the owner's email and them at a devic
 | Every background job records its last start, success and failure (`job_status`, migration 0021): worker jobs and the four scheduled jobs | ✅ | `health.test.ts` |
 | `GET /v1/platform/health` + portal **System health** (super admin and finance): jobs red when failing or overdue for their schedule, ledger balance, reconciliation, stuck uploads, missing backups, tablets online, and a launch checklist (revenue rules, staff two-step, backup bucket, email, payments, hardware-only tablets), each with what to do | ✅ | `health.test.ts`; staff portal e2e |
 | Backup connection reported by the worker's backup runs (the API holds no backup keys) | ✅ | `health.test.ts` |
+
+## 2026-11-10 — Session 28b: revenue rules and staff from the portal
+| Item | Status | Evidence |
+|---|---|---|
+| Finance → Revenue split rules: the rule in effect per category, a **Draft a rule** form pre-filled with the agreed splits (5/60/35, 5/0/95, 15/10/75, 15/0/85), drafts with approval progress; the drafter and the first approver can’t approve again | ✅ | staff portal e2e: drafted, approved by one person, final approval by a third, stored as 500/6000/3500 |
+| Platform **Team** page: invite finance approvers, finance admins, support agents and super admins | ✅ | staff portal e2e: invited and accepted |
+| While email isn’t connected, the inviter sees the single-use link once to send it themselves (audited); once Resend is on, links are only emailed | ✅ | `accounts.test.ts` |
+
+Note: one full API run had a single failure that did not repeat in three further full runs; watch for a flaky test.

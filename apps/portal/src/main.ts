@@ -19,6 +19,7 @@ let me: Me | null = null;
 let orgs: Array<{ id: string; kind: string; name: string }> = [];
 export let current: { id: string; kind: string; name: string; perms: Set<string> } | null = null;
 export const can = (p: string) => !!current?.perms.has(p);
+export const currentUserId = () => me?.user.id ?? '';
 
 // ------------------------------------------------------------------ signed out
 /** Forget everything about the signed-in user (token, org, timers, cached identity). */
@@ -451,7 +452,7 @@ async function fleetDrivers() {
 }
 
 // ------------------------------------------------------------------ shared sections
-export async function team(roles: string[]) {
+export async function team(roles: string[], help = 'fleet admin: manages vehicles, tablets and team · fleet viewer: read-only · driver: sees their own earnings.') {
   const inv = (await api('GET', `${base()}/invitations`)).items as any[];
   const f = el('form', { class: 'inline', id: 'invite-form' },
     input('Name', { name: 'displayName', required: '', maxlength: '200' }), input('Email', { name: 'email', type: 'email', required: '' }),
@@ -459,17 +460,26 @@ export async function team(roles: string[]) {
     el('button', { class: 'btn primary', type: 'submit' }, 'Send invitation'));
   f.addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (await act(() => api('POST', `${base()}/invitations`, Object.fromEntries(new FormData(f))), 'Invitation sent. The link is valid for 7 days.')) await team(roles);
+    try {
+      const r = await api<{ inviteLink?: string }>('POST', `${base()}/invitations`, Object.fromEntries(new FormData(f)));
+      if (r.inviteLink) {
+        // Email isn't connected yet (D-044): the inviter sends the link themselves.
+        const box = el('div', { class: 'code', id: 'invite-link' }, r.inviteLink);
+        await info('Send this invitation yourself', el('p', {}, 'Email isn’t connected yet, so nothing was sent. Copy this link and send it to them by text or email. It works once, only for their email address, for 7 days.'),
+          box, btn('Copy link', async () => { try { await navigator.clipboard.writeText(r.inviteLink!); toast('Link copied.'); } catch { toast('Copy failed; select the link instead.', true); } }, 'btn small'));
+      } else toast('Invitation sent. The link is valid for 7 days.');
+      await team(roles, help);
+    } catch (err) { toast(errText(err), true); }
   });
   const state = (i: any) => i.accepted_at ? chip('Accepted', 'ok') : i.revoked_at ? chip('Revoked') : Date.parse(i.expires_at) < Date.now() ? chip('Expired') : chip('Pending', 'warn');
   render(el('h1', {}, 'Team'),
     el('div', { class: 'card' }, el('h2', {}, 'Invite someone'), f,
-      el('p', { class: 'muted' }, 'fleet admin: manages vehicles, tablets and team · fleet viewer: read-only · driver: sees their own earnings.')),
+      el('p', { class: 'muted' }, help)),
     el('div', { class: 'table-wrap' }, el('table', { id: 'invitations' },
       el('thead', {}, el('tr', {}, ...['Name', 'Email', 'Role', 'Status', ''].map((h) => el('th', {}, h)))),
       el('tbody', {}, ...inv.map((i) => el('tr', {}, el('td', {}, i.display_name), el('td', {}, i.email), el('td', {}, i.role_code.replace(/_/g, ' ')), el('td', {}, state(i)),
         el('td', {}, !i.accepted_at && !i.revoked_at && Date.parse(i.expires_at) > Date.now()
-          ? btn('Revoke', () => act(() => api('POST', `${base()}/invitations/${i.id}/revoke`), 'Invitation revoked.').then(() => team(roles)), 'btn small danger') : null)))))));
+          ? btn('Revoke', () => act(() => api('POST', `${base()}/invitations/${i.id}/revoke`), 'Invitation revoked.').then(() => team(roles, help)), 'btn small danger') : null)))))));
 }
 
 async function security() {

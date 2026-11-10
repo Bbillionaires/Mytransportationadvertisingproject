@@ -87,6 +87,27 @@ describe('invitations', () => {
     expect(me.memberships).toEqual([expect.objectContaining({ orgId: fleetOrg, role: 'driver' })]);
   });
 
+  it('while email is not connected, the inviter gets the link once (audited); it is the same working single-use link', async () => {
+    const email = `linked-${uid()}@example.test`;
+    const r = (await api('POST', `/v1/orgs/${fleetOrg}/invitations`, fleetAdmin.h, { email, displayName: 'Texted Invite', role: 'fleet_viewer' })).json();
+    expect(r).toMatchObject({ emailNotConnected: true, inviteLink: expect.stringMatching(/\/portal\/\?invite=/) });
+    const token = decodeURIComponent(r.inviteLink.split('invite=')[1]);
+    expect(token).toBe(await linkToken(ctx.db, email, 'invitation', 'invite'));
+    expect((await api('POST', '/v1/auth/accept-invitation', {}, { token, password: 'a long viewer passphrase' })).json()).toMatchObject({ accepted: true, role: 'fleet_viewer' });
+    const a = await ctx.db.query(`SELECT details FROM audit_log WHERE action = 'invitation.created' AND details->>'email' = $1`, [email]);
+    expect(a.rows[0].details.linkShownToInviter).toBe(true);
+  });
+
+  it('once email is connected the link is only emailed, never shown', async () => {
+    const withEmail = await setupApp({ env: { EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 're_test_123', EMAIL_FROM: 'Rides <no-reply@example.test>' } });
+    const o = await org(withEmail.db, 'FLEET_OPERATOR');
+    const adminE = await userWithRole(withEmail, o, 'fleet_admin');
+    const r = await withEmail.app.inject({ method: 'POST', url: `/v1/orgs/${o}/invitations`, headers: adminE.h, payload: { email: `mailed-${uid()}@example.test`, displayName: 'x', role: 'fleet_viewer' } });
+    expect(r.statusCode).toBe(201);
+    expect(r.json().inviteLink).toBeUndefined();
+    await withEmail.app.close(); await withEmail.db.end();
+  });
+
   it('revoked and expired invitations do not work; roles must match the organization', async () => {
     const e1 = `revoked-${uid()}@example.test`, e2 = `expired-${uid()}@example.test`;
     const i1 = (await api('POST', `/v1/orgs/${fleetOrg}/invitations`, fleetAdmin.h, { email: e1, displayName: 'x', role: 'fleet_viewer' })).json().invitationId;
