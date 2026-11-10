@@ -37,14 +37,22 @@ import { platformRoutes } from './modules/platform/routes.js';
 import { mediaOrigins } from './lib/objectStore.js';
 
 /** Postgres error codes raised by our integrity triggers/constraints, surfaced as client errors. */
-const PG_CLIENT_ERRORS: Record<string, [number, string]> = {
-  '23505': [409, 'CONFLICT'],
-  '23503': [422, 'REFERENCE_VIOLATION'],
-  '23514': [422, 'INTEGRITY_VIOLATION'],
-  '23P01': [409, 'OVERLAP_VIOLATION'],
-  '42501': [403, 'IMMUTABLE_RECORD'],
-  '22P02': [400, 'BAD_REQUEST'],
+/**
+ * Database errors a client can cause. Raw PostgreSQL text names tables, columns and constraints, so it is only passed
+ * through for errors our own triggers raise on purpose (check/exclusion rules with written messages); the others get
+ * a plain message (R-015 live probe, session 29).
+ */
+const PG_CLIENT_ERRORS: Record<string, [number, string, string | null]> = {
+  '23505': [409, 'CONFLICT', 'this already exists'],
+  '23503': [422, 'REFERENCE_VIOLATION', 'refers to something that does not exist or is still in use'],
+  '23514': [422, 'INTEGRITY_VIOLATION', null],
+  '23P01': [409, 'OVERLAP_VIOLATION', null],
+  '42501': [403, 'IMMUTABLE_RECORD', 'this record is immutable (permission denied)'],
+  '22P02': [400, 'BAD_REQUEST', 'invalid value'],
 };
+/** Our triggers raise readable messages; PostgreSQL's own check-constraint text mentions the relation and is replaced. */
+const pgMessage = (err: { message: string }, fallback: string | null) =>
+  fallback ?? (/violates (check|exclusion) constraint|relation "/.test(err.message) ? 'the request breaks a data rule' : err.message);
 
 /** Domain errors from @rmn/finance-core: the request violates a financial rule. */
 const FINANCE_RULE_ERRORS = new Set(['MoneyError', 'AllocationError', 'RuleError', 'WaterfallError', 'PartySplitError', 'PoolError']);
@@ -94,13 +102,22 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
     if (config.NODE_ENV === 'production') reply.header('strict-transport-security', 'max-age=63072000; includeSubDomains');
     if (req.url.startsWith('/v1/')) req.auth = await resolveSession(db, req);
   });
+  // API responses can carry personal or financial data: never stored by browsers or shared caches (R-015).
+  app.addHook('onSend', async (req, reply) => {
+    if (req.url.startsWith('/v1/') && !reply.hasHeader('cache-control')) reply.header('cache-control', 'no-store');
+  });
+  // Same error shape as everything else; doesn't advertise the framework.
+  app.setNotFoundHandler((req, reply) => reply.code(404).send({ error: { code: 'NOT_FOUND', message: 'not found' }, requestId: req.id }));
 
   app.setErrorHandler((err: any, req, reply) => {
     if (err instanceof HttpError) return reply.code(err.statusCode).send({ error: { code: err.code, message: err.message, details: err.details }, requestId: req.id });
     if (FINANCE_RULE_ERRORS.has(err.name)) return reply.code(422).send({ error: { code: 'FINANCIAL_RULE_VIOLATION', message: err.message }, requestId: req.id });
     if (err.statusCode === 429) return reply.code(429).send({ error: { code: 'RATE_LIMITED', message: 'too many requests' }, requestId: req.id });
     const pg = typeof err.code === 'string' ? PG_CLIENT_ERRORS[err.code] : undefined;
-    if (pg) return reply.code(pg[0]).send({ error: { code: pg[1], message: err.message }, requestId: req.id });
+    if (pg) {
+      req.log.info({ pgCode: err.code, constraint: err.constraint }, 'database rule rejected the request');
+      return reply.code(pg[0]).send({ error: { code: pg[1], message: pgMessage(err, pg[2]) }, requestId: req.id });
+    }
     if (err.validation || err.statusCode === 400) return reply.code(400).send({ error: { code: 'BAD_REQUEST', message: err.message }, requestId: req.id });
     // Framework client errors (unsupported media type, body too large, malformed JSON…) keep their 4xx status.
     if (typeof err.statusCode === 'number' && err.statusCode >= 400 && err.statusCode < 500) {
@@ -149,7 +166,8 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
     webmanifest: 'application/manifest+json', svg: 'image/svg+xml' };
   const webApp = (prefix: string, dir: string, files: string[], csp: string, permissions: string) => {
     const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), dir);
-    const allowed = new Set(files);
+    // Source maps help debugging but hand out readable source; not published in production (R-015).
+    const allowed = new Set(config.NODE_ENV === 'production' ? files.filter((f) => !f.endsWith('.map')) : files);
     app.get(`/${prefix}`, async (req, reply) => reply.redirect(`/${prefix}/${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`));
     app.get(`/${prefix}/`, async (req, reply) => reply.redirect(`/${prefix}/index.html${req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''}`));
     app.get(`/${prefix}/:file`, async (req, reply) => {

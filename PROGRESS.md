@@ -485,3 +485,13 @@ Still to do on Railway: first admin (needs the owner's email and them at a devic
 
 Note: one full API run had a single failure that did not repeat in three further full runs; watch for a flaky test.
 | Team page **Members** list: change a role or remove someone (all portals); not your own role; never the last admin; takes effect immediately; audited | ✅ | `members.test.ts`; staff portal e2e |
+
+## 2026-11-10 — Session 29: live security probe (R-015 preparation)
+| Finding on production | Severity | Status | Evidence |
+|---|---|---|---|
+| API responses (personal/financial data) had no `cache-control: no-store` | Medium | ✅ fixed | `hardening.test.ts` |
+| Source maps published (`/portal/portal.js.map` etc.): full readable source | Low | ✅ fixed (production only) | `hardening.test.ts` |
+| Database error text named tables and constraints (e.g. duplicate key) | Low | ✅ fixed (plain messages; details logged) | `hardening.test.ts` |
+| Unknown routes answered in the framework's own format | Info | ✅ fixed | `hardening.test.ts` |
+| Sign-in guessing: limited to 10/min per real address; forged `X-Forwarded-For` doesn't change the key | — | ✅ verified, no change | probe output |
+Rerun any time: `bash infra/security-probe.sh <url>`.
