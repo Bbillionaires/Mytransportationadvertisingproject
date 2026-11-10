@@ -495,3 +495,4 @@ Note: one full API run had a single failure that did not repeat in three further
 | Unknown routes answered in the framework's own format | Info | ✅ fixed | `hardening.test.ts` |
 | Sign-in guessing: limited to 10/min per real address; forged `X-Forwarded-For` doesn't change the key | — | ✅ verified, no change | probe output |
 Rerun any time: `bash infra/security-probe.sh <url>`.
+| Show/Hide button on every password box (portal and rider app), added automatically to new screens; hides again on submit | ✅ | fleet portal and rider e2e |

@@ -29,3 +29,10 @@ input[type=text], input[type=email], input[type=password], input[type=number] { 
 .badge { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #233; color: var(--ok); }
 video.scan { width: 100%; border-radius: 12px; background: #000; }
 .foot { color: var(--muted); font-size: 13px; text-align: center; padding: 20px 0; }
+
+/* Show/Hide button inside password boxes (passwordToggle.ts) */
+.pw-wrap { position: relative; display: block; }
+.pw-wrap input { width: 100%; padding-right: 4.5em; box-sizing: border-box; }
+.pw-toggle { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); font: inherit; font-size: 13px; font-weight: 600;
+  padding: 4px 10px; border: 0; border-radius: 6px; background: transparent; color: #1f6feb; cursor: pointer; min-height: 32px; }
+.pw-toggle:focus-visible { outline: 2px solid #1f6feb; outline-offset: 1px; }

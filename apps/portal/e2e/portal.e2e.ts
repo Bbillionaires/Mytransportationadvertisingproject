@@ -71,6 +71,24 @@ async function main() {
   const nav = (p: import('playwright').Page, title: string) => p.click(`#nav a:has-text("${title}")`);
 
   try {
+    step('password boxes have Show/Hide so people can check what they typed');
+    {
+      const m = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true });
+      const p = await m.newPage();
+      await p.goto(`${BASE}/portal/`);
+      const pw = p.locator('#signin input[name=password]');
+      await pw.fill('my typed password');
+      assert.equal(await pw.getAttribute('type'), 'password');
+      await p.click('#signin button.pw-toggle:has-text("Show")');
+      assert.equal(await pw.getAttribute('type'), 'text');
+      assert.equal(await pw.inputValue(), 'my typed password', 'showing never changes what was typed');
+      assert.equal(await p.getAttribute('#signin button.pw-toggle', 'aria-pressed'), 'true');
+      await p.screenshot({ path: path.join(SHOTS, 'portal-password-shown.png') });
+      await p.click('#signin button.pw-toggle:has-text("Hide")');
+      assert.equal(await pw.getAttribute('type'), 'password');
+      await m.close();
+    }
+
     step('fleet admin signs in: empty overview invites them to add a tablet');
     await signIn(page, adminEmail, 'fleet-admin-password');
     await page.waitForSelector('#attention:has-text("No tablets yet")');
@@ -169,7 +187,7 @@ async function main() {
     const viewer = await viewerCtx.newPage(); watch(viewer, 'viewer');
     await viewer.goto(await emailLink(viewerEmail, 'invitation'));
     await viewer.fill('#invite-form input[name=pw]', 'viewer-password-123');
-    await viewer.click('#invite-form button');
+    await viewer.click('#invite-form button[type=submit]');
     await viewer.waitForSelector('#signin:has-text("Invitation accepted")');
     await signIn(viewer, viewerEmail, 'viewer-password-123');
     await viewer.waitForSelector('#nav a:has-text("Tablets")');
@@ -215,7 +233,7 @@ async function main() {
     await page.waitForSelector('#signin:has-text("reset link is on its way")');
     await page.goto(await emailLink(adminEmail, 'password_reset'));
     await page.fill('#reset-form input[name=pw]', 'a brand new fleet password');
-    await page.click('#reset-form button');
+    await page.click('#reset-form button[type=submit]');
     await page.waitForSelector('#signin:has-text("Password changed")');
 
     assert.deepEqual(problems, [], 'no page errors or CSP violations');

@@ -1,3 +1,4 @@
+import { enablePasswordToggles } from '../../portal/src/passwordToggle';
 import { qrSvg } from '../../player/src/qr';
 
 /** Rider phone web app. Plain DOM; all user/advertiser text is set via textContent. */
@@ -233,4 +234,5 @@ async function boot() {
   if (store.get(TOKEN)) await home();
   else { if (pairCode) msg('Sign in (or create a free account) to connect to this screen.'); signedOut(); }
 }
+enablePasswordToggles();
 void boot();

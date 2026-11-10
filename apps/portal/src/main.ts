@@ -3,6 +3,7 @@ import { advertiserSections } from './advertiser';
 import { creatorSections } from './creator';
 import { staffSections } from './staff';
 import { driverSections } from './driver';
+import { enablePasswordToggles } from './passwordToggle';
 import { TOKEN, ORG, ss, $, el, btn, input, select, chip, toast, render, ago, fmtDate, api, errText, act, closeDialog, dialog, info, setUnauthorizedHandler, type Kid } from './ui';
 
 /**
@@ -543,4 +544,5 @@ function keyGeneratorCard() {
 
 // ------------------------------------------------------------------ start
 setUnauthorizedHandler(endSession);
+enablePasswordToggles();
 void (async () => { if (!(await handleEmailLink())) await boot(); })();

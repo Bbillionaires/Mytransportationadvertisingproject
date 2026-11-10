@@ -100,6 +100,12 @@ async function main() {
     await page.fill('#register [name=displayName]', 'Sam');
     await page.fill('#register [name=email]', email);
     await page.fill('#register [name=password]', 'a long rider passphrase');
+    // Show/Hide on password boxes, so riders can check what they typed on a phone keyboard.
+    await page.click('#register button.pw-toggle');
+    assert.equal(await page.getAttribute('#register [name=password]', 'type'), 'text');
+    assert.equal(await page.inputValue('#register [name=password]'), 'a long rider passphrase');
+    await page.click('#register button.pw-toggle');
+    assert.equal(await page.getAttribute('#register [name=password]', 'type'), 'password');
     await page.fill('#register [name=birthYear]', '1990');
     await page.check('#register [name=adult]'); await page.check('#register [name=terms]');
     await page.click('#register button[type=submit]');

@@ -99,7 +99,7 @@ async function main() {
     const driver = await open('driver', true);
     await driver.goto(await emailLink(driverEmail, 'invitation'));
     await driver.fill('#invite-form input[name=pw]', 'a long driver passphrase');
-    await driver.click('#invite-form button');
+    await driver.click('#invite-form button[type=submit]');
     await driver.waitForSelector('#signin:has-text("Invitation accepted")');
 
     step('before being added to a fleet, the driver is told why nothing is available yet');
