@@ -5,6 +5,15 @@ on:
 permissions:
   contents: read
 jobs:
+  secrets:
+    # The repository is public: fail fast if anything shaped like a real secret is committed (infra/secret-scan.mjs).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: node infra/secret-scan.mjs --self-test
+      - run: node infra/secret-scan.mjs
   test:
     runs-on: ubuntu-latest
     services:
