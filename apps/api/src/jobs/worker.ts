@@ -14,6 +14,7 @@ import { processPendingUploads } from '../modules/media/process.js';
 import { processPendingWebhooks } from '../modules/payments/webhooks.js';
 import { bootstrapFromEnv } from '../modules/platform/bootstrap.js';
 import { rotateEncryptedValues } from '../modules/platform/rotateKeys.js';
+import { trackJob } from '../lib/jobStatus.js';
 import { verifyMedia } from '../modules/media/backup.js';
 
 const config = loadConfig();
@@ -28,7 +29,13 @@ const jobs: Array<{ name: string; everyMs: number; run: () => Promise<unknown>; 
   { name: 'validate-events', everyMs: 30_000, run: () => runValidation(db, 5000), next: 0 },
   { name: 'process-webhooks', everyMs: 15_000, run: () => (config.PAYMENTS_PROVIDER === 'disabled' ? Promise.resolve() : processPendingWebhooks(db)), next: 0 },
   { name: 'send-email', everyMs: 15_000, run: () => deliverPendingEmail(db, email), next: 0 },
-  { name: 'backup-media', everyMs: 5 * 60_000, run: () => runBackups(db, config), next: 0 },
+  { name: 'backup-media', everyMs: 5 * 60_000, next: 0, run: async () => {
+    // Flattened so System health can see how many backup buckets are connected (only this service holds their keys).
+    const r = Object.values(await runBackups(db, config));
+    const s = { targets: r.length, copied: r.reduce((n, x) => n + x.copied, 0), failed: r.reduce((n, x) => n + x.failed, 0) };
+    if (s.failed) throw new Error(`${s.failed} video(s) could not be copied to the backup this round (will retry)`);
+    return s;
+  } },
   // Nightly media audit here (not a cron service) because only this service holds the backup keys. Problems are logged
   // as errors; a monthly deep re-hash stays a manual/cron run (jobs:verify-media -- --deep).
   { name: 'verify-media', everyMs: 24 * 3600_000, next: Date.now() + 10 * 60_000, run: async () => {
@@ -61,7 +68,7 @@ while (!stopping) {
     if (stopping || now < j.next) continue;
     const t0 = Date.now();
     try {
-      const r = await j.run();
+      const r = await trackJob(db, j.name, j.run);
       if (r && typeof r === 'object' && Object.values(r).some((v) => typeof v === 'number' && v > 0)) log({ job: j.name, ms: Date.now() - t0, result: r });
     } catch (e) {
       log({ job: j.name, level: 'error', error: (e as Error).message.slice(0, 500) });

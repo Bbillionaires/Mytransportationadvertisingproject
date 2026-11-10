@@ -231,6 +231,20 @@ async function main() {
     const sa = await open('super-admin');
     await signIn(sa, superAdmin, true);
     await sa.waitForSelector('#stat-creators .n:has-text("1")');
+    // System health: plain-language checks; seeded revenue rules mean the checklist shows them as done.
+    await q(`INSERT INTO job_status (job, last_started_at, last_ok_at) VALUES ('process-media', now(), now()) ON CONFLICT (job) DO UPDATE SET last_ok_at = now()`);
+    await q(`INSERT INTO job_status (job, last_started_at, last_failed_at, last_error, consecutive_failures) VALUES ('allocate-windows', now(), now(), 'database timeout', 2)
+             ON CONFLICT (job) DO UPDATE SET last_failed_at = now(), last_error = 'database timeout', consecutive_failures = 2`);
+    await nav(sa, 'System health');
+    await sa.waitForSelector('#health-overall:has-text("needs attention")');
+    await sa.waitForSelector('tr[data-check="job:allocate-windows"]:has-text("Problem"):has-text("database timeout")');
+    await sa.waitForSelector('tr[data-check="job:process-media"] .chip.ok');
+    await sa.waitForSelector('#health-launch-checklist tr[data-check="email"]:has-text("To do")');
+    await sa.screenshot({ path: path.join(SHOTS, 'staff-health.png'), fullPage: true });
+    await q(`DELETE FROM job_status`);
+    await sa.click('button:has-text("Refresh")');
+    await sa.waitForSelector('#health-overall:not(:has-text("needs attention"))');
+
     // Key rotation helper: a fresh 32-byte key made in the browser, with no request to the server.
     await nav(sa, 'Security');
     const keyRequests: string[] = [];

@@ -468,3 +468,10 @@ Still to do on Railway: first admin (needs the owner's email and them at a devic
 | Re-encryption job (`jobs:rotate-encryption-key [--check]`), also run automatically by the worker while a previous key is set; audited; refuses to report done if anything is unreadable | ✅ | same: two-step sign-in works on the old key, during the switch, after re-encryption and after removing the old key |
 | Super-admin key generator in the portal (made in the browser, never sent to the server) | ✅ | staff portal e2e: 32-byte keys, no network request, hidden from other staff |
 | Rotation guide for every secret | ✅ | `docs/KEY_ROTATION.md` |
+
+## 2026-11-10 — Session 28: System health page
+| Item | Status | Evidence |
+|---|---|---|
+| Every background job records its last start, success and failure (`job_status`, migration 0021): worker jobs and the four scheduled jobs | ✅ | `health.test.ts` |
+| `GET /v1/platform/health` + portal **System health** (super admin and finance): jobs red when failing or overdue for their schedule, ledger balance, reconciliation, stuck uploads, missing backups, tablets online, and a launch checklist (revenue rules, staff two-step, backup bucket, email, payments, hardware-only tablets), each with what to do | ✅ | `health.test.ts`; staff portal e2e |
+| Backup connection reported by the worker's backup runs (the API holds no backup keys) | ✅ | `health.test.ts` |

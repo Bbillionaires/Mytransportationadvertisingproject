@@ -9,6 +9,7 @@ import { act, api, btn, chip, dialog, download, el, errText, fmtDate, input, mon
 
 export const staffSections: Section[] = [
   { id: 'overview', title: 'Overview', perm: '', view: () => overview() },
+  { id: 'health', title: 'System health', perm: 'platform.health.read', view: () => systemHealth() },
   { id: 'ad-review', title: 'Ad review', perm: 'campaign.review', view: () => adReview() },
   { id: 'moderation', title: 'Video moderation', perm: 'content.review', view: () => moderation() },
   { id: 'takedowns', title: 'Copyright notices', perm: 'takedown.manage', view: () => takedowns() },
@@ -267,3 +268,24 @@ async function auditLog() {
       el('p', { class: 'muted' }, 'Latest 200 entries. The log is append-only and hash-chained; verify the chain with the audit verification job.'));
   });
 }
+
+// ------------------------------------------------------------------ system health
+interface HealthCheck { id: string; group: string; title: string; status: 'ok' | 'warn' | 'fail' | 'todo'; detail: string; action?: string }
+const HEALTH_CHIP: Record<HealthCheck['status'], [string, '' | 'ok' | 'warn' | 'err']> = { ok: ['OK', 'ok'], warn: ['Check', 'warn'], fail: ['Problem', 'err'], todo: ['To do', ''] };
+
+/** Plain-language status of background jobs, money integrity, backups and the launch checklist (GET /v1/platform/health). */
+async function systemHealth() {
+  const h = await api<{ generatedAt: string; overall: 'ok' | 'warn' | 'fail'; checks: HealthCheck[] }>('GET', '/v1/platform/health');
+  const headline = h.overall === 'ok' ? el('p', { class: 'ok', id: 'health-overall' }, 'Everything is running normally.')
+    : h.overall === 'warn' ? el('p', { class: 'warn', id: 'health-overall' }, 'Running, with something to check below.')
+    : el('p', { class: 'err', id: 'health-overall' }, 'Something needs attention now (marked Problem below).');
+  const groups = [...new Set(h.checks.map((c) => c.group))];
+  render(el('h1', {}, 'System health'), headline,
+    el('p', { class: 'muted' }, `Checked ${fmtDate(h.generatedAt)}. `, btn('Refresh', () => systemHealth(), 'btn small')),
+    ...groups.map((g) => el('div', { class: 'card', id: `health-${g.toLowerCase().replace(/[^a-z]+/g, '-')}` }, el('h2', {}, g),
+      el('table', {}, el('tbody', {}, ...h.checks.filter((c) => c.group === g)
+        .sort((a, b) => order(a.status) - order(b.status))
+        .map((c) => el('tr', { 'data-check': c.id }, el('td', {}, chip(...HEALTH_CHIP[c.status])),
+          el('td', {}, el('strong', {}, c.title), el('div', { class: 'sub' }, c.detail), c.action ? el('div', { class: 'sub' }, `What to do: ${c.action}`) : null))))))));
+}
+const order = (s: HealthCheck['status']) => ({ fail: 0, warn: 1, todo: 2, ok: 3 })[s];

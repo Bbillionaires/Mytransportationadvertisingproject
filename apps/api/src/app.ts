@@ -25,6 +25,7 @@ import { reportRoutes } from './modules/reports/routes.js';
 import { accountRoutes } from './modules/identity/accounts.js';
 import { impersonationRoutes } from './modules/identity/impersonation.js';
 import { metricsRoutes } from './modules/ops/metrics.js';
+import { healthRoutes } from './modules/ops/health.js';
 import { riderRoutes } from './modules/riders/routes.js';
 import { engagementRoutes } from './modules/riders/engagement.js';
 import type { PaymentProvider } from './modules/payments/provider.js';
@@ -115,6 +116,7 @@ export async function buildApp(opts: { config: Config; db: Db; logger?: boolean 
   });
 
   await metricsRoutes(app, { db, config }); // root-level hooks so every route is measured
+  await app.register(healthRoutes, { db, config });
   await app.register(identityRoutes, { db, config });
   await app.register(accountRoutes, { db, config });
   await app.register(impersonationRoutes, { db });

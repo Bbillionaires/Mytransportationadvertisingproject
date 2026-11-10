@@ -2,10 +2,12 @@
 import { loadConfig } from '../config.js';
 import { createPool } from '../db/pool.js';
 import { runScheduledAllocations } from '../modules/events/scheduler.js';
+import { trackJob } from '../lib/jobStatus.js';
 
 const config = loadConfig();
 const db = createPool(config.DATABASE_URL);
-const r = await runScheduledAllocations(db, config);
+const r = await trackJob(db, 'allocate-windows', () => runScheduledAllocations(db, config),
+  { isFailure: (x) => (x.skipped > 0 ? `${x.skipped} window(s) could not be allocated (see the allocation results)` : null) });
 console.log(JSON.stringify(r, null, 2));
 await db.end();
 if (r.skipped > 0) process.exitCode = 2; // surface blocked windows to the scheduler's alerting

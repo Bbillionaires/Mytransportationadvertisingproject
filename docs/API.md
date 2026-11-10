@@ -226,3 +226,8 @@ Framework client errors (unsupported media type, payload too large, malformed bo
 |---|---|---|
 | GET | `/v1/orgs/:orgId/campaigns/:id/report?from&to&format=json\|csv` | `campaign.read`; daily rows in the campaign's time zone: impressions, qualifiedViews, completions, clicks, billablePlays, spend (whole cents, truncated), spendMilliMinor (exact), rejectedEvents. Billable uses the same rule as budgets and billing |
 | GET | `/v1/orgs/:orgId/conversions?format=csv` | CSV of the latest 500 reported sales (fixed columns, formula-injection safe) |
+
+## Operations
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/v1/platform/health` | `platform.health.read` (super admin, finance) → `{generatedAt, overall: ok\|warn\|fail, checks: [{id, group, title, status: ok\|warn\|fail\|todo, detail, action?}]}`: background jobs (from `job_status`), ledger balance, reconciliation, backups, tablets, launch checklist |
