@@ -71,7 +71,10 @@ describe('commission offers and API keys', () => {
     expect(k.json().key).toMatch(/^rmnk_[a-f0-9]{12}_/);
     keyHeader = { authorization: `Bearer ${k.json().key}` };
     const listed = JSON.stringify((await api('GET', `/v1/orgs/${advertiser}/integration-keys`, advAdmin.h)).json());
-    expect(listed).not.toContain(k.json().key.split('_')[2]);
+    // The secret is everything after "rmnk_<12-hex prefix>_"; it is random base64url and may itself contain "_".
+    const secret = k.json().key.slice('rmnk_'.length + 12 + 1);
+    expect(secret.length).toBeGreaterThanOrEqual(40);
+    expect(listed).not.toContain(secret);
     expect((await report({ orderId: 'x', saleAmountMinor: '100' }, {})).statusCode).toBe(401);
     const k2 = (await api('POST', `/v1/orgs/${advertiser}/integration-keys`, advAdmin.h, { name: 'old' })).json();
     await api('POST', `/v1/orgs/${advertiser}/integration-keys/${k2.id}/revoke`, advAdmin.h, {});
