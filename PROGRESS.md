@@ -498,3 +498,12 @@ Rerun any time: `bash infra/security-probe.sh <url>`.
 | Show/Hide button on every password box (portal and rider app), added automatically to new screens; hides again on submit | ✅ | fleet portal and rider e2e |
 | Staff **Users** page: find a person by exact email, create a password reset link (shown while email is off), turn off two-step for a lost phone, unlock, disable/re-enable; reason required, audited | ✅ | `recovery.test.ts`; staff portal e2e |
 | Why pushes don't auto-deploy: the Railway GitHub app isn't installed on the repo (owner action, see RAILWAY_DEPLOY.md) | 🔎 found | Railway agent check |
+
+## 2026-11-10 — Session 30: own domain and Google Workspace email
+| Item | Status | Evidence |
+|---|---|---|
+| `https://app.azothadz.com` on Railway (DNS at Vercel: CNAME + ownership TXT), TLS certificate issued | ✅ live | `/readyz` ok, portal 200 |
+| SMTP email sender (`EMAIL_PROVIDER=smtp`, Google Workspace), TLS required, stable Message-ID per outbox row; Resend kept as backup | ✅ | `smtp.test.ts`: real TLS SMTP server with a password, wrong password retried, unencrypted server refused |
+| Media bucket CORS kept in step with the app's web addresses by the worker on start (it had never been applied in production, so tablets couldn't cache media offline) | ✅ | `mediabackup.test.ts` against moto |
+| nodemailer pinned to 10.2.1 (19 days old, past all published advisories); production `npm audit`: 0 vulnerabilities | ✅ | |
+Dev-only note: vitest 3 reports advisories (test runner only, never shipped); upgrade to vitest 5 separately.

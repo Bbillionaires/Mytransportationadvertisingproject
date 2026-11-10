@@ -37,6 +37,8 @@ const schema = z.object({
   MEDIA_S3_ACCESS_KEY_ID: z.string().optional(),
   MEDIA_S3_SECRET_ACCESS_KEY: z.string().optional(),
   MEDIA_S3_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('false'),
+  /** Other web addresses tablets may run the player from (comma-separated origins), besides APP_PUBLIC_URL. */
+  MEDIA_CORS_EXTRA_ORIGINS: z.string().optional(),
   /** Up to two backup buckets for original uploads (e.g. AWS S3 with Object Lock). Endpoint empty = AWS. */
   BACKUP1_S3_ENDPOINT: z.string().url().optional(), BACKUP1_S3_REGION: z.string().optional(), BACKUP1_S3_BUCKET: z.string().optional(),
   BACKUP1_S3_ACCESS_KEY_ID: z.string().optional(), BACKUP1_S3_SECRET_ACCESS_KEY: z.string().optional(), BACKUP1_S3_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('false'),
@@ -67,7 +69,15 @@ const schema = z.object({
    * boot and a locked bootloader; off: ignore it.
    */
   DEVICE_ATTESTATION: z.enum(['off', 'optional', 'required']).default('optional'),
-  EMAIL_PROVIDER: z.enum(['log', 'resend']).default('log'),
+  EMAIL_PROVIDER: z.enum(['log', 'smtp', 'resend']).default('log'),
+  /** SMTP (EMAIL_PROVIDER=smtp). Google Workspace: smtp.gmail.com, 465, secure, the sending account and an App Password. */
+  SMTP_HOST: z.string().min(1).default('smtp.gmail.com'),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(465),
+  SMTP_SECURE: z.enum(['true', 'false']).default('true'),
+  SMTP_USER: z.string().email().optional(),
+  SMTP_PASSWORD: z.string().min(8).optional(),
+  /** Where replies go, e.g. support@azothadz.com (optional). */
+  EMAIL_REPLY_TO: z.string().email().optional(),
   RESEND_API_KEY: z.string().regex(/^re_[A-Za-z0-9_]+$/, 'RESEND_API_KEY must look like re_…').optional(),
   /** Sender address on a domain verified in Resend, e.g. "Rideshare Media <no-reply@rides.example.com>". */
   EMAIL_FROM: z.string().min(3).max(200).optional(),
@@ -100,6 +110,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (parsed.data.NODE_ENV === 'production' && parsed.data.PAYMENTS_PROVIDER === 'fake') throw new Error('the fake payment provider cannot run in production');
   if (parsed.data.MEDIA_STORE === 's3' && !(parsed.data.MEDIA_S3_BUCKET && parsed.data.MEDIA_S3_ACCESS_KEY_ID && parsed.data.MEDIA_S3_SECRET_ACCESS_KEY)) throw new Error('MEDIA_STORE=s3 requires MEDIA_S3_BUCKET, MEDIA_S3_ACCESS_KEY_ID and MEDIA_S3_SECRET_ACCESS_KEY');
   if (parsed.data.EMAIL_PROVIDER === 'resend' && !(parsed.data.RESEND_API_KEY && parsed.data.EMAIL_FROM)) throw new Error('EMAIL_PROVIDER=resend requires RESEND_API_KEY and EMAIL_FROM');
+  if (parsed.data.EMAIL_PROVIDER === 'smtp' && !(parsed.data.SMTP_USER && parsed.data.SMTP_PASSWORD && parsed.data.EMAIL_FROM)) throw new Error('EMAIL_PROVIDER=smtp requires SMTP_USER, SMTP_PASSWORD and EMAIL_FROM');
   parsed.data.PLAYLIST_BUDGET_CACHE_MS ??= parsed.data.NODE_ENV === 'test' ? 0 : 5000;
   if (parsed.data.NODE_ENV === 'production' && parsed.data.DEV_IN_PROCESS_JOBS === 'true') throw new Error('DEV_IN_PROCESS_JOBS cannot be used in production');
   return parsed.data;

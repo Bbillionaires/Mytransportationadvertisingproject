@@ -15,6 +15,7 @@ import { processPendingWebhooks } from '../modules/payments/webhooks.js';
 import { bootstrapFromEnv } from '../modules/platform/bootstrap.js';
 import { rotateEncryptedValues } from '../modules/platform/rotateKeys.js';
 import { trackJob } from '../lib/jobStatus.js';
+import { ensureMediaCors } from '../lib/objectStore.js';
 import { verifyMedia } from '../modules/media/backup.js';
 
 const config = loadConfig();
@@ -60,6 +61,11 @@ if (config.APP_ENCRYPTION_KEY_PREVIOUS) {
       : 'KEY ROTATION incomplete: keep APP_ENCRYPTION_KEY_PREVIOUS', level: done ? 'info' : 'error', result: r });
   } catch (e) { log({ msg: 'KEY ROTATION failed: keep APP_ENCRYPTION_KEY_PREVIOUS', level: 'error', error: (e as Error).message }); }
 }
+
+// Media bucket CORS for the tablet player's offline cache, kept in step with APP_PUBLIC_URL (no command needed).
+await trackJob(db, 'media-cors', () => ensureMediaCors(config))
+  .then((r) => log({ msg: r.applied ? 'media bucket CORS set' : 'media bucket CORS skipped', ...r }))
+  .catch((e) => log({ msg: 'media bucket CORS failed (tablets stream but cannot cache offline)', level: 'error', error: (e as Error).message.slice(0, 300) }));
 
 log({ msg: 'worker started', jobs: jobs.map((j) => `${j.name}/${j.everyMs / 1000}s`) });
 while (!stopping) {

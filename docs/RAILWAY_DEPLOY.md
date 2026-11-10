@@ -29,7 +29,8 @@ Start jobs with `node --import tsx …` rather than `npm run …`: npm reports e
 | `PAYMENTS_PROVIDER` | `disabled` until Stripe is connected (Stripe is last, by the product owner's choice). Checkout then says "Payments are not enabled yet", and webhooks are refused |
 | `MEDIA_STORE` + `MEDIA_S3_*` | from the `media` bucket (docs/MEDIA_STORAGE.md) |
 | `BACKUP1_S3_*` | AWS backup bucket and key, **sealed**. Worker and verify-media only |
-| `EMAIL_PROVIDER`, `EMAIL_FROM`, `RESEND_API_KEY` | `resend`, e.g. `Rides <no-reply@mail.example.com>` (a domain verified in Resend with SPF/DKIM), and the API key, **sealed**. Worker only |
+| `EMAIL_PROVIDER`, `EMAIL_FROM`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_REPLY_TO` | **Google Workspace:** `smtp`, e.g. `Azoth Ads <no-reply@azothadz.com>`, the sending account, its **App Password** (sealed; never in chat), and optionally `support@azothadz.com`. Worker only. Backup: `resend` with `RESEND_API_KEY` |
+| `APP_PUBLIC_URL` / `MEDIA_CORS_EXTRA_ORIGINS` | `https://app.azothadz.com`; extra origins tablets may use (the worker sets the media bucket's CORS from these on start) |
 | `DEVICE_ATTESTATION` | `optional` for the pilot; `required` once every tablet runs the Android shell (D-059) |
 | `METRICS_TOKEN` | random 32+ characters, to scrape `/metrics` |
 | `LOG_LEVEL` | `info` |

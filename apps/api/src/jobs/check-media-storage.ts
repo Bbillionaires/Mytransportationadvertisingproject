@@ -8,9 +8,9 @@
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { GetBucketVersioningCommand, GetObjectLockConfigurationCommand, PutBucketCorsCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetBucketVersioningCommand, GetObjectLockConfigurationCommand, S3Client } from '@aws-sdk/client-s3';
 import { loadConfig, type Config } from '../config.js';
-import { mediaStores, ObjectExistsError } from '../lib/objectStore.js';
+import { ensureMediaCors, mediaStores, ObjectExistsError } from '../lib/objectStore.js';
 
 const config = loadConfig();
 const results: Array<{ check: string; ok: boolean | 'warn'; detail?: string }> = [];
@@ -37,9 +37,8 @@ try {
 
 if (config.MEDIA_STORE === 's3') {
   try {
-    await client('MEDIA_S3').send(new PutBucketCorsCommand({ Bucket: config.MEDIA_S3_BUCKET!, CORSConfiguration: { CORSRules: [{
-      AllowedOrigins: [new URL(config.APP_PUBLIC_URL).origin], AllowedMethods: ['GET', 'HEAD'], AllowedHeaders: ['*'], ExposeHeaders: ['Content-Length', 'Content-Type'], MaxAgeSeconds: 3600 }] } }));
-    ok(`${primary.name}: CORS allows ${new URL(config.APP_PUBLIC_URL).origin} (tablet media cache)`);
+    const c = await ensureMediaCors(config);
+    ok(`${primary.name}: CORS allows ${c.origins.join(', ')} (tablet media cache)`);
   } catch (e) { fail(`${primary.name}: CORS`, `${(e as Error).message} — tablets will still stream, but cannot keep offline copies`); }
 } else ok(`${primary.name}: local disk (development)`);
 

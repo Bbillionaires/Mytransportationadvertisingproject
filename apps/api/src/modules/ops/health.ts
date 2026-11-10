@@ -107,7 +107,8 @@ export async function systemHealth(db: Db, config: Config, now = new Date()) {
                                WHERE o.kind = 'PLATFORM' AND m.status = 'ACTIVE' AND u.status = 'ACTIVE' AND NOT u.mfa_enabled`);
   todo('staff-mfa', 'All staff use two-step verification', staffNoMfa === 0, 'Everyone on the platform team has it on.', `${staffNoMfa} staff member(s) haven’t turned it on.`, 'Each person: Security → Set up two-step verification.', true);
   todo('backup-configured', 'Locked backup bucket connected', backupTargets > 0, `Connected (${backupTargets} backup bucket${backupTargets > 1 ? 's' : ''}).`, 'No backup bucket is configured.', 'docs/MEDIA_STORAGE.md');
-  todo('email', 'Email sending (Resend + your domain)', config.EMAIL_PROVIDER === 'resend', 'Connected.', 'Not connected: invitations and password resets aren’t delivered yet.', 'Order a domain, verify it in Resend, then set EMAIL_PROVIDER=resend (docs/RAILWAY_DEPLOY.md).');
+  todo('email', 'Email sending', config.EMAIL_PROVIDER !== 'log', `Connected (${config.EMAIL_PROVIDER === 'smtp' ? `Google Workspace / SMTP via ${config.SMTP_HOST}` : 'Resend'}).`,
+    'Not connected: invitations and password resets aren’t delivered yet (staff can copy links meanwhile).', 'Google Workspace: set EMAIL_PROVIDER=smtp with SMTP_USER, SMTP_PASSWORD (an App Password) and EMAIL_FROM on the worker (docs/RAILWAY_DEPLOY.md).');
   todo('payments', 'Payments', config.PAYMENTS_PROVIDER !== 'disabled', 'Enabled (test mode).', 'Off for now (advertisers can’t add funds). Planned last.', 'Choose a processor (DECISIONS D-026).');
   todo('attestation', 'Only hardware-verified tablets', config.DEVICE_ATTESTATION === 'required', 'Required network-wide.', 'Optional: web-browser players are still accepted (fleets can require it themselves).', 'Switch DEVICE_ATTESTATION to required once every tablet runs the Android app (D-059).');
 

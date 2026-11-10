@@ -154,3 +154,27 @@ export function mediaOrigins(config: Config): string[] {
   const ep = new URL(config.MEDIA_S3_ENDPOINT ?? `https://s3.${config.MEDIA_S3_REGION === 'auto' ? 'us-east-1' : config.MEDIA_S3_REGION}.amazonaws.com`);
   return config.MEDIA_S3_FORCE_PATH_STYLE === 'true' ? [ep.origin] : [`${ep.protocol}//${config.MEDIA_S3_BUCKET}.${ep.host}`];
 }
+
+/** Origins allowed to read media from the bucket (the tablet player's offline cache uses fetch, which needs CORS). */
+export function mediaCorsOrigins(config: Config): string[] {
+  const extra = (config.MEDIA_CORS_EXTRA_ORIGINS ?? '').split(',').map((o) => o.trim()).filter(Boolean).map((o) => new URL(o).origin);
+  return [...new Set([new URL(config.APP_PUBLIC_URL).origin, ...extra])];
+}
+
+/**
+ * Sets the media bucket's CORS rule to exactly the app's origins (read-only: GET/HEAD). Idempotent; the worker runs
+ * it on start so a new web address works for tablets without anyone running a command.
+ */
+export async function ensureMediaCors(config: Config): Promise<{ applied: boolean; origins: string[]; reason?: string }> {
+  const origins = mediaCorsOrigins(config);
+  if (config.MEDIA_STORE !== 's3') return { applied: false, origins, reason: 'local storage' };
+  const { S3Client, PutBucketCorsCommand } = await import('@aws-sdk/client-s3');
+  const client = new S3Client({ region: config.MEDIA_S3_REGION && config.MEDIA_S3_REGION !== 'auto' ? config.MEDIA_S3_REGION : 'us-east-1',
+    ...(config.MEDIA_S3_ENDPOINT ? { endpoint: config.MEDIA_S3_ENDPOINT } : {}), forcePathStyle: config.MEDIA_S3_FORCE_PATH_STYLE === 'true',
+    credentials: { accessKeyId: config.MEDIA_S3_ACCESS_KEY_ID!, secretAccessKey: config.MEDIA_S3_SECRET_ACCESS_KEY! } });
+  try {
+    await client.send(new PutBucketCorsCommand({ Bucket: config.MEDIA_S3_BUCKET!, CORSConfiguration: { CORSRules: [{
+      AllowedOrigins: origins, AllowedMethods: ['GET', 'HEAD'], AllowedHeaders: ['*'], ExposeHeaders: ['Content-Length', 'Content-Type'], MaxAgeSeconds: 3600 }] } }));
+    return { applied: true, origins };
+  } finally { client.destroy(); }
+}

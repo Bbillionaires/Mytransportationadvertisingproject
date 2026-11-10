@@ -8,10 +8,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { CreateBucketCommand, DeleteObjectCommand, ListObjectVersionsCommand, PutObjectCommand, PutObjectLockConfigurationCommand, S3Client } from '@aws-sdk/client-s3';
+import { CreateBucketCommand, GetBucketCorsCommand, DeleteObjectCommand, ListObjectVersionsCommand, PutObjectCommand, PutObjectLockConfigurationCommand, S3Client } from '@aws-sdk/client-s3';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config.js';
-import { mediaStores, ObjectExistsError } from '../src/lib/objectStore.js';
+import { ensureMediaCors, mediaStores, ObjectExistsError } from '../src/lib/objectStore.js';
 import { restoreMedia, runBackups, verifyMedia } from '../src/modules/media/backup.js';
 import { processPendingUploads } from '../src/modules/media/process.js';
 import { org, setupApp, userWithRole, type Ctx } from './helpers.js';
@@ -118,6 +118,21 @@ describe.skipIf(!reachable)('media object storage and backups (R-021)', () => {
   it('refuses to start in s3 mode without credentials', () => {
     expect(() => loadConfig({ NODE_ENV: 'test', DATABASE_URL: 'postgres://x/y', APP_ENCRYPTION_KEY: Buffer.alloc(32).toString('base64'), MEDIA_SIGNING_KEY: Buffer.alloc(32).toString('base64'),
       STRIPE_WEBHOOK_SECRET: 'whsec_x', MEDIA_STORE: 's3', MEDIA_S3_BUCKET: 'b' })).toThrow(/MEDIA_S3_ACCESS_KEY_ID/);
+  });
+});
+
+describe.skipIf(!reachable)('media bucket CORS for the tablet offline cache', () => {
+  it('the worker’s ensureMediaCors allows exactly the app’s web addresses, read-only, and is safe to repeat', async () => {
+    const bucket = `rmn-cors-${run}`;
+    await raw.send(new CreateBucketCommand({ Bucket: bucket }));
+    const config = loadConfig({ NODE_ENV: 'test', DATABASE_URL: 'postgres://x/y', APP_ENCRYPTION_KEY: 'A'.repeat(43) + '=', MEDIA_SIGNING_KEY: 'B'.repeat(43) + '=',
+      PAYMENTS_PROVIDER: 'disabled', MEDIA_STORE: 's3', ...s3env('MEDIA_S3', bucket), APP_PUBLIC_URL: 'https://app.azothadz.example',
+      MEDIA_CORS_EXTRA_ORIGINS: 'https://api-production-81031.up.railway.app/, https://app.azothadz.example' });
+    expect(await ensureMediaCors(config)).toEqual({ applied: true, origins: ['https://app.azothadz.example', 'https://api-production-81031.up.railway.app'] });
+    await ensureMediaCors(config);
+    const rules = (await raw.send(new GetBucketCorsCommand({ Bucket: bucket }))).CORSRules!;
+    expect(rules).toHaveLength(1);
+    expect(rules[0]).toMatchObject({ AllowedOrigins: ['https://app.azothadz.example', 'https://api-production-81031.up.railway.app'], AllowedMethods: ['GET', 'HEAD'] });
   });
 });
 
