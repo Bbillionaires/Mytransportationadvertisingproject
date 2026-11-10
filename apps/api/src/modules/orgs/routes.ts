@@ -1,10 +1,10 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Db } from '../../db/pool.js';
 import { withTx } from '../../db/pool.js';
 import { audit } from '../../lib/audit.js';
 import { hashPassword } from '../../lib/crypto.js';
-import { forbidden, notFound } from '../../lib/errors.js';
+import { conflict, forbidden, notFound } from '../../lib/errors.js';
 import { parse, uuid } from '../../lib/validation.js';
 import { actorOf, authorize, requireAuth } from '../../auth/context.js';
 
@@ -77,11 +77,52 @@ export async function orgRoutes(app: FastifyInstance, { db }: { db: Db }) {
     await loadOrg(db, orgId);
     await authorize(db, req, 'org.members.manage', orgId);
     const r = await db.query(
-      `SELECT m.id, m.role_code AS role, m.status, u.id AS user_id, u.email, u.display_name FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.org_id = $1 ORDER BY u.email`,
+      `SELECT m.id, m.role_code AS role, m.status, u.id AS user_id, u.email, u.display_name, u.mfa_enabled FROM memberships m JOIN users u ON u.id = m.user_id
+        WHERE m.org_id = $1 AND m.status = 'ACTIVE' ORDER BY u.display_name, u.email`,
       [orgId],
     );
     return { items: r.rows };
   });
+
+  /** The role that keeps an organization manageable; the last active one can't be removed or demoted. */
+  const ADMIN_ROLE: Record<string, string> = { PLATFORM: 'super_admin', FLEET_OPERATOR: 'fleet_admin', ADVERTISER: 'advertiser_admin', CREATOR_STUDIO: 'creator_owner' };
+
+  /** Change a member's role or remove them. Never your own membership; never the last administrator. Audited. */
+  const changeMembership = async (req: FastifyRequest, change: { role?: string; remove?: true }) => {
+    const { orgId, membershipId } = parse(z.object({ orgId: uuid, membershipId: uuid }), req.params);
+    const org = await loadOrg(db, orgId);
+    const auth = org.kind === 'PLATFORM' ? await authorize(db, req, 'platform.users.manage') : await authorize(db, req, 'org.members.manage', orgId);
+    if (change.role) {
+      const role = (await db.query('SELECT org_kind FROM roles WHERE code = $1', [change.role])).rows[0];
+      if (!role || role.org_kind !== org.kind) throw forbidden(`role ${change.role} cannot be granted in a ${org.kind} organization`);
+    }
+    return withTx(db, async (tx) => {
+      await tx.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['members:' + orgId]);
+      const m = (await tx.query(`SELECT id, user_id, role_code FROM memberships WHERE id = $1 AND org_id = $2 AND status = 'ACTIVE' FOR UPDATE`, [membershipId, orgId])).rows[0];
+      if (!m) throw notFound('active member not found');
+      if (m.user_id === auth.userId) throw forbidden('you can’t change or remove your own role; ask another administrator', 'SELF_CHANGE');
+      if (change.role === m.role_code) return { membershipId: m.id, role: m.role_code, unchanged: true };
+      const admin = ADMIN_ROLE[org.kind];
+      if (admin && m.role_code === admin) {
+        const others = (await tx.query(`SELECT count(*)::int AS n FROM memberships mm JOIN users u ON u.id = mm.user_id
+                                          WHERE mm.org_id = $1 AND mm.role_code = $2 AND mm.status = 'ACTIVE' AND u.status = 'ACTIVE' AND mm.id <> $3`, [orgId, admin, m.id])).rows[0].n;
+        if (others === 0) throw conflict(`this is the last ${admin.replace(/_/g, ' ')}; add another one before changing or removing this person`);
+      }
+      await tx.query(`UPDATE memberships SET status = 'REVOKED' WHERE id = $1`, [m.id]);
+      let newId: string | null = null;
+      if (change.role) {
+        newId = (await tx.query(
+          `INSERT INTO memberships (user_id, org_id, role_code, created_by) VALUES ($1,$2,$3,$4)
+           ON CONFLICT (user_id, org_id, role_code) DO UPDATE SET status = 'ACTIVE' RETURNING id`, [m.user_id, orgId, change.role, auth.userId])).rows[0].id;
+      }
+      await audit(tx, actorOf(req), change.role ? 'membership.role_changed' : 'membership.removed', { type: 'membership', id: m.id, orgId },
+        { userId: m.user_id, from: m.role_code, to: change.role ?? null });
+      return change.role ? { membershipId: newId, role: change.role } : { removed: true };
+    });
+  };
+
+  app.patch('/v1/orgs/:orgId/members/:membershipId', async (req) => changeMembership(req, { role: parse(z.object({ role: z.string().min(1).max(50) }), req.body).role }));
+  app.post('/v1/orgs/:orgId/members/:membershipId/remove', async (req) => changeMembership(req, { remove: true }));
 
   app.get('/v1/audit', async (req) => {
     await authorize(db, req, 'platform.audit.read');

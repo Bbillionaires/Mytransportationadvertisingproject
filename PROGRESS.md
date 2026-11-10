@@ -484,3 +484,4 @@ Still to do on Railway: first admin (needs the owner's email and them at a devic
 | While email isn’t connected, the inviter sees the single-use link once to send it themselves (audited); once Resend is on, links are only emailed | ✅ | `accounts.test.ts` |
 
 Note: one full API run had a single failure that did not repeat in three further full runs; watch for a flaky test.
+| Team page **Members** list: change a role or remove someone (all portals); not your own role; never the last admin; takes effect immediately; audited | ✅ | `members.test.ts`; staff portal e2e |

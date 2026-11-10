@@ -231,3 +231,6 @@ Framework client errors (unsupported media type, payload too large, malformed bo
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/v1/platform/health` | `platform.health.read` (super admin, finance) → `{generatedAt, overall: ok\|warn\|fail, checks: [{id, group, title, status: ok\|warn\|fail\|todo, detail, action?}]}`: background jobs (from `job_status`), ledger balance, reconciliation, backups, tablets, launch checklist |
+
+| PATCH | `/v1/orgs/:orgId/members/:membershipId` | `org.members.manage` (`platform.users.manage` for the platform) `{role}`: change a member's role; not your own; never demotes the last admin (409); audited |
+| POST | `/v1/orgs/:orgId/members/:membershipId/remove` | same rules; access ends on the member's next request |

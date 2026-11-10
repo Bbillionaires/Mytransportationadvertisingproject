@@ -453,7 +453,28 @@ async function fleetDrivers() {
 
 // ------------------------------------------------------------------ shared sections
 export async function team(roles: string[], help = 'fleet admin: manages vehicles, tablets and team · fleet viewer: read-only · driver: sees their own earnings.') {
-  const inv = (await api('GET', `${base()}/invitations`)).items as any[];
+  const [inv, members] = await Promise.all([api('GET', `${base()}/invitations`).then((r) => r.items as any[]), api('GET', `${base()}/members`).then((r) => r.items as any[])]);
+  const roleName = (r: string) => r.replace(/_/g, ' ');
+  // Roles outside this page's list (e.g. a member added another way) still show, so a change never hides who has what.
+  const membersCard = el('div', { class: 'card', id: 'members' }, el('h2', {}, `Members (${members.length})`),
+    el('div', { class: 'table-wrap' }, el('table', {}, el('tbody', {}, ...members.map((m) => {
+      const isMe = m.user_id === me!.user.id;
+      const sel = el('select', { 'aria-label': `Role for ${m.display_name}` }, ...[...new Set([m.role, ...roles])].map((r) => el('option', { value: r, ...(r === m.role ? { selected: '' } : {}) }, roleName(r)))) as HTMLSelectElement;
+      sel.addEventListener('change', async () => {
+        const to = sel.value;
+        const ok = await dialog('Change role', [el('p', {}, `${m.display_name} (${m.email}): ${roleName(m.role)} → ${roleName(to)}. It takes effect immediately.`)], 'Change role');
+        if (ok && await act(() => api('PATCH', `${base()}/members/${m.id}`, { role: to }), 'Role changed.')) await team(roles, help);
+        else sel.value = m.role;
+      });
+      return el('tr', { 'data-member': m.email },
+        el('td', {}, m.display_name, isMe ? el('span', { class: 'sub' }, ' (you)') : null, el('div', { class: 'sub' }, m.email)),
+        el('td', {}, isMe ? roleName(m.role) : sel, m.mfa_enabled ? null : el('div', { class: 'sub' }, 'two-step verification off')),
+        el('td', {}, isMe ? null : btn('Remove', async () => {
+          const ok = await dialog('Remove from the team', [el('p', {}, `${m.display_name} (${m.email}) loses access immediately. You can invite them again later.`)], 'Remove', true);
+          if (ok && await act(() => api('POST', `${base()}/members/${m.id}/remove`), 'Removed.')) await team(roles, help);
+        }, 'btn small danger')));
+    })))),
+    el('p', { class: 'muted' }, 'You can’t change your own role; another administrator can. The last administrator can’t be removed.'));
   const f = el('form', { class: 'inline', id: 'invite-form' },
     input('Name', { name: 'displayName', required: '', maxlength: '200' }), input('Email', { name: 'email', type: 'email', required: '' }),
     select('Role', 'role', roles.map((r) => [r, r.replace(/_/g, ' ')])),
@@ -472,7 +493,7 @@ export async function team(roles: string[], help = 'fleet admin: manages vehicle
     } catch (err) { toast(errText(err), true); }
   });
   const state = (i: any) => i.accepted_at ? chip('Accepted', 'ok') : i.revoked_at ? chip('Revoked') : Date.parse(i.expires_at) < Date.now() ? chip('Expired') : chip('Pending', 'warn');
-  render(el('h1', {}, 'Team'),
+  render(el('h1', {}, 'Team'), membersCard,
     el('div', { class: 'card' }, el('h2', {}, 'Invite someone'), f,
       el('p', { class: 'muted' }, help)),
     el('div', { class: 'table-wrap' }, el('table', { id: 'invitations' },

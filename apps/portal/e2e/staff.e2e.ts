@@ -341,6 +341,16 @@ async function main() {
     await cto.waitForSelector('text=Invitation accepted');
     assert.ok((await q(`SELECT accepted_at FROM invitations WHERE email = 'cto@example.test'`))[0].accepted_at, 'invitation accepted');
 
+    step('Team: change the new member’s role (finance approver → finance admin); your own role is not editable');
+    await nav(sa, 'Overview'); await nav(sa, 'Team');
+    await sa.waitForSelector('#members tr[data-member="cto@example.test"]');
+    assert.equal(await sa.locator('#members tr:has-text("(you)") select').count(), 0, 'no role picker on your own row');
+    await sa.selectOption('#members tr[data-member="cto@example.test"] select', 'finance_admin');
+    await sa.click('#dlg button:has-text("Change role")');
+    await sa.waitForSelector('#toast:has-text("Role changed")');
+    const ctoRoles = await q(`SELECT m.role_code FROM memberships m JOIN users u ON u.id = m.user_id WHERE u.email = 'cto@example.test' AND m.status = 'ACTIVE'`);
+    assert.deepEqual(ctoRoles.map((r: any) => r.role_code), ['finance_admin']);
+
     assert.deepEqual(problems, [], 'no page errors or CSP violations');
     console.log(`  ✓ staff portal e2e passed (screenshots in ${SHOTS})`);
   } finally {
