@@ -57,7 +57,7 @@ if (process.argv.includes('--self-test')) {
     'Stripe webhook secret': `whsec_${rnd(32)}`,
     'Resend API key': `token: 're_${rnd(8)}_${rnd(24)}'`,
     'GitHub token': `ghp_${rnd(36)}`,
-    'private key': '-----BEGIN EC PRIVATE KEY-----',
+    'private key': ['-----BEGIN EC', 'PRIVATE KEY-----'].join(' '), // assembled at run time so this file doesn't flag itself
     'app key literal': `APP_ENCRYPTION_KEY=${randomBytes(32).toString('base64')}`,
     'database URL with password': `DATABASE_URL=postgresql://postgres:${rnd(24)}@postgres.railway.internal:5432/railway`,
   };
